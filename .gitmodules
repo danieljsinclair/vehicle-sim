@@ -1,0 +1,8 @@
+# Submodule configuration
+# Add submodules as needed for modular architecture
+
+# Example structure:
+# [submodule "lib-name"]
+#     path = external/lib-name
+#     url = https://github.com/username/lib-name.git
+#     branch = main
