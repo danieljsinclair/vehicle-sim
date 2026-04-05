@@ -10,7 +10,7 @@ BUILD_TYPE ?= Release
 # Default to parallel build using available CPU cores
 MAKEFLAGS += -j$(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-.PHONY: all clean scrub test submodules check-cmake ios clean-ios
+.PHONY: all clean scrub test submodules check-cmake ios clean-ios ios-run ios-device
 
 all: check-cmake submodules $(BUILD_DIR)/Makefile
 	@cd $(BUILD_DIR) && $(MAKE)
@@ -53,19 +53,34 @@ test: all
 
 # iOS simulator build (builds C++ core library only)
 ios: check-cmake submodules
-	@echo "Building vehicle-sim core library for iOS simulator..."
+	@echo "Building vehicle-sim C++ core library for iOS..."
 	@rm -rf build-ios
 	@mkdir -p build-ios
 	@cd build-ios && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DBUILD_IOS=ON -G Xcode ..
 	@cd build-ios && xcodebuild -scheme vehicle-sim-core-ios -configuration $(BUILD_TYPE) -sdk iphonesimulator -arch arm64 build
 	@echo ""
-	@echo "iOS core library built successfully: build-ios/Release/libvehicle-sim-core.a"
+	@echo "iOS C++ core library built successfully: build-ios/Release/libvehicle-sim-core.a"
 	@echo ""
-	@echo "To build the iOS app:"
-	@echo "  1. Open build-ios/vehicle-sim.xcodeproj in Xcode"
-	@echo "  2. Select the 'vehicle-sim-ios' scheme"
-	@echo "  3. Choose iPhone Simulator as destination"
-	@echo "  4. Press Cmd+R to build and run"
+	@echo "========================================"
+	@echo "iOS APP BUILD & DEPLOYMENT:"
+	@echo "========================================"
+	@echo ""
+	@echo "STEP 1: Open Xcode project:"
+	@echo "   open vehicle-sim-ios/VehicleSim/VehicleSimApp.xcodeproj"
+	@echo ""
+	@echo "STEP 2: Build and run in Xcode:"
+	@echo "   - Select 'VehicleSimApp' scheme"
+	@echo "   - Choose target: iPhone Simulator OR your physical iPhone"
+	@echo "   - Press Cmd+R to build and run"
+	@echo ""
+	@echo "STEP 3: For physical iPhone deployment:"
+	@echo "   - Connect iPhone to Mac via USB"
+	@echo "   - Select your device from target dropdown in Xcode"
+	@echo "   - Go to Signing & Capabilities, set Team to your Apple ID"
+	@echo "   - Press Cmd+R to build and install"
+	@echo "   - First install: Settings → General → VPN & Device Management → Trust"
+	@echo ""
+	@echo "See vehicle-sim-ios/BUILD_DEPLOY_GUIDE.md for detailed instructions"
 	@echo ""
 
 clean-ios:

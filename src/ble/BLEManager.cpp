@@ -67,9 +67,7 @@ std::string BLEManager::getConnectedDeviceId() const {
 }
 
 void BLEManager::setPlatform(std::unique_ptr<BLEPlatform> platform) {
-    if (platform) {
-        platform_ = std::move(platform);
-    }
+    platform_ = std::move(platform);
 }
 
 } // namespace vehicle_sim

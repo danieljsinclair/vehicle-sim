@@ -44,6 +44,7 @@ set(VEHICLE_SIM_LIB_SOURCES
     src/config/ConfigLoader.cpp
     src/domain/VehicleSignal.cpp
     src/domain/TelemetrySignal.cpp
+    src/domain/TeslaSignalTranslator.cpp
 )
 
 # Library target with core functionality (for testing and main executable)
