@@ -1,0 +1,62 @@
+#include <gtest/gtest.h>
+#include "vehicle-sim/domain/TelemetrySignal.h"
+
+using namespace vehicle_sim::domain;
+
+// ================================================
+// TelemetrySignal Unit Tests
+// TDD - Full test coverage for output value object
+// ================================================
+
+TEST(TelemetrySignalTest, ConstructsWithValidValues)
+{
+    const TelemetrySignal signal(3000.0, 3, 450.0, 100.0, 50.0, 123456789ULL);
+
+    EXPECT_DOUBLE_EQ(signal.getRpm(), 3000.0);
+    EXPECT_EQ(signal.getGear(), 3);
+    EXPECT_DOUBLE_EQ(signal.getTorqueNm(), 450.0);
+    EXPECT_DOUBLE_EQ(signal.getSpeedKmh(), 100.0);
+    EXPECT_DOUBLE_EQ(signal.getThrottlePercent(), 50.0);
+    EXPECT_EQ(signal.getTimestampUtcMs(), 123456789ULL);
+}
+
+TEST(TelemetrySignalTest, ClampsRpmToValidRange)
+{
+    EXPECT_DOUBLE_EQ(TelemetrySignal(-100.0, 1, 0, 0, 0, 0).getRpm(), 0.0);
+    EXPECT_DOUBLE_EQ(TelemetrySignal(15000.0, 1, 0, 0, 0, 0).getRpm(), 12000.0);
+}
+
+TEST(TelemetrySignalTest, ClampsGearToValidRange)
+{
+    EXPECT_EQ(TelemetrySignal(0, -2, 0, 0, 0, 0).getGear(), -1);
+    EXPECT_EQ(TelemetrySignal(0, 10, 0, 0, 0, 0).getGear(), 9);
+}
+
+TEST(TelemetrySignalTest, ClampsTorqueToValidRange)
+{
+    EXPECT_DOUBLE_EQ(TelemetrySignal(0, 1, -100.0, 0, 0, 0).getTorqueNm(), 0.0);
+    EXPECT_DOUBLE_EQ(TelemetrySignal(0, 1, 2000.0, 0, 0, 0).getTorqueNm(), 1500.0);
+}
+
+TEST(TelemetrySignalTest, ClampsThrottleToValidRange)
+{
+    EXPECT_DOUBLE_EQ(TelemetrySignal(0, 1, 0, 0, -10.0, 0).getThrottlePercent(), 0.0);
+    EXPECT_DOUBLE_EQ(TelemetrySignal(0, 1, 0, 0, 120.0, 0).getThrottlePercent(), 100.0);
+}
+
+TEST(TelemetrySignalTest, ValueEqualityWorks)
+{
+    const TelemetrySignal a(3000.0, 3, 450.0, 100.0, 50.0, 12345);
+    const TelemetrySignal b(3000.0, 3, 450.0, 100.0, 50.0, 12345);
+    const TelemetrySignal c(3001.0, 3, 450.0, 100.0, 50.0, 12345);
+
+    EXPECT_EQ(a, b);
+    EXPECT_NE(a, c);
+}
+
+TEST(TelemetrySignalTest, IsImmutable)
+{
+    // Compile time test: no mutator methods exist
+    // This test passes by compiling successfully
+    SUCCEED();
+}

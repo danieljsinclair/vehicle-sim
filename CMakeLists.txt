@@ -43,6 +43,7 @@ set(VEHICLE_SIM_LIB_SOURCES
     src/ble/platform/BLEManagerMock.cpp
     src/config/ConfigLoader.cpp
     src/domain/VehicleSignal.cpp
+    src/domain/TelemetrySignal.cpp
 )
 
 # Library target with core functionality (for testing and main executable)

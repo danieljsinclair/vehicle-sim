@@ -1,5 +1,6 @@
 # Build artifacts and temporary files
 build/
+build-ios/
 cmake-build-*/
 CMakeCache.txt
 CMakeFiles/
