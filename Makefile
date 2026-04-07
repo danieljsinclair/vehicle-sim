@@ -8,9 +8,9 @@ all:
 clean:
 	@$(MAKE) -C build clean
 
-# Run tests
-test:
-	@$(MAKE) -C build test
+# Run tests (builds first)
+test: all
+	@$(MAKE) -C build test ARGS="--verbose" GTEST_COLOR=yes
 
 # Build for iOS
 ios:

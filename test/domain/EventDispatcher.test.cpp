@@ -216,17 +216,16 @@ TEST_F(EventDispatcherTest, ConcurrentRegistrationDuringDispatch) {
 }
 
 /**
- * Test 6: 10Hz minimum update rate support
+ * Test 6: Throughput exceeds 10Hz minimum requirement
  *
- * Requirement: EventDispatcher must support 10Hz minimum
- * throughput (100ms between dispatches)
+ * Requirement: EventDispatcher must support 10Hz minimum throughput.
+ * This test measures actual throughput (events/second) without artificial delays.
  */
-TEST_F(EventDispatcherTest, Supports10HzUpdateRate) {
+TEST_F(EventDispatcherTest, ThroughputExceeds10HzRequirement) {
     // Arrange
     std::atomic<int> callCount{0};
-    const int targetHz = 10;
-    const int numDispatches = 20; // 2 seconds at 10Hz
-    const int targetMsPerDispatch = 1000 / targetHz;
+    const int numDispatches = 1000; // Test with substantial signal count
+    const double minRequiredHz = 10.0; // MVP minimum requirement
 
     auto consumer = [&](const VehicleSignal& signal) {
         callCount++;
@@ -234,7 +233,7 @@ TEST_F(EventDispatcherTest, Supports10HzUpdateRate) {
 
     dispatcher->registerConsumer(consumer);
 
-    // Act
+    // Act - Dispatch as fast as possible to measure actual throughput
     auto startTime = std::chrono::high_resolution_clock::now();
 
     for (int i = 0; i < numDispatches; ++i) {
@@ -243,19 +242,26 @@ TEST_F(EventDispatcherTest, Supports10HzUpdateRate) {
             static_cast<double>(i * 2),
             0.1,
             0.0,
-            i
+            static_cast<std::uint64_t>(i)
         );
         dispatcher->dispatch(signal);
-        std::this_thread::sleep_for(std::chrono::milliseconds(targetMsPerDispatch));
     }
 
     auto endTime = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+    auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
 
-    // Assert
+    // Assert - All events were dispatched
     EXPECT_EQ(callCount.load(), numDispatches);
-    EXPECT_GE(duration.count(), numDispatches * targetMsPerDispatch * 0.9); // Allow 10% tolerance
-    EXPECT_LE(duration.count(), numDispatches * targetMsPerDispatch * 1.5); // Allow 50% overhead tolerance
+
+    // Assert - Actual throughput meets or exceeds 10Hz requirement
+    double actualHz = (numDispatches * 1000.0) / durationMs.count();
+    EXPECT_GE(actualHz, minRequiredHz)
+        << "Actual throughput: " << actualHz << " Hz (required: " << minRequiredHz << " Hz)";
+
+    // Assert - Throughput is substantially higher than minimum requirement
+    // This proves the dispatcher is not the bottleneck for 10Hz updates
+    EXPECT_GE(actualHz, 100.0)
+        << "Throughput should be at least 10x minimum requirement (actual: " << actualHz << " Hz)";
 
     dispatcher->clear();
 }
