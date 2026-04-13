@@ -75,3 +75,10 @@ temp/
 engine-sim/
 engine-sim-bridge/
 _deps/
+.claude/
+.claude-flow/
+.swarm/memory.db
+.swarm/memory.db-shm
+.swarm/memory.db-wal
+.swarm/schema.sql
+.swarm/state.json

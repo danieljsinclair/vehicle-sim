@@ -9,24 +9,25 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Threads REQUIRED)
 
 # Platform-specific settings
+find_library(COREBLUETOOTH CoreBluetooth)
+
+# Platform-specific settings
 if(APPLE)
-    # macOS specific frameworks if needed
+    # macOS specific frameworks
 elseif(LINUX)
     # Linux specific libraries if needed
 endif()
 
-# iOS build option
-option(BUILD_IOS "Build for iOS simulator/device" OFF)
+# iOS build option — builds C++ library only (iOS app uses standalone Xcode project)
+option(BUILD_IOS "Build C++ library for iOS" OFF)
 if(BUILD_IOS)
-    # Enable Swift only when building iOS with Xcode generator
-    if(CMAKE_GENERATOR STREQUAL "Xcode")
-        enable_language(Swift)
-        set(CMAKE_Swift_VERSION "5.9" CACHE STRING "Swift language version")
-    endif()
-    set(CMAKE_OSX_SYSROOT "iphonesimulator" CACHE STRING "iOS SDK")
-    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "iOS architectures")
-    set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "iPhone Developer" CACHE STRING "Code signing identity")
-    set(CMAKE_MACOSX_BUNDLE YES)
+    set(CMAKE_SYSTEM_NAME iOS CACHE STRING "Target OS")
+    set(CMAKE_OSX_SYSROOT iphoneos CACHE STRING "iOS SDK")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "16.0" CACHE STRING "Min iOS version")
+    set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "iOS architectures")
+    set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "-" CACHE STRING "Code signing (auto)")
+    set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED NO CACHE BOOL "")
+    set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED NO CACHE BOOL "")
 endif()
 
 # NOTE: We are a standalone Tesla→iPhone data flow module
@@ -38,6 +39,7 @@ set(VEHICLE_SIM_LIB_SOURCES
     src/VehicleSim.cpp
     src/presentation/TelemetryFormatter.cpp
     src/ble/BLEManager.cpp
+    src/ble/BLEManagerBase.cpp
     src/ble/TeslaBLETransport.cpp
     src/ble/platform/BLEManagerMock.cpp
     src/config/ConfigLoader.cpp
@@ -47,6 +49,20 @@ set(VEHICLE_SIM_LIB_SOURCES
     src/domain/TeslaSignalParser.cpp
     src/domain/EventDispatcher.cpp
 )
+
+# Add platform-specific BLE implementations for macOS builds
+if(APPLE AND NOT BUILD_IOS)
+    list(APPEND VEHICLE_SIM_LIB_SOURCES
+        src/ble/platform/BLEManagerMacOS.mm
+    )
+endif()
+
+# Add platform-specific BLE implementations for iOS builds
+if(BUILD_IOS)
+    list(APPEND VEHICLE_SIM_LIB_SOURCES
+        src/ble/platform/BLEManageriOS.mm
+    )
+endif()
 
 # Library target with core functionality (for testing and main executable)
 add_library(vehicle-sim-lib
@@ -58,6 +74,14 @@ target_link_libraries(vehicle-sim-lib
     Threads::Threads
 )
 
+# Link CoreBluetooth on Apple platforms
+if(APPLE)
+    target_link_libraries(vehicle-sim-lib
+        PRIVATE
+        ${COREBLUETOOTH}
+    )
+endif()
+
 target_include_directories(vehicle-sim-lib
     PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -68,7 +92,8 @@ target_include_directories(vehicle-sim-lib
 
 target_compile_options(vehicle-sim-lib PRIVATE -g)
 
-# Main executable
+# Main executable (CLI — not built for iOS)
+if(NOT BUILD_IOS)
 add_executable(vehicle-sim
     src/main.cpp
 )
@@ -78,54 +103,16 @@ target_link_libraries(vehicle-sim
     vehicle-sim-lib
 )
 
-target_compile_options(vehicle-sim PRIVATE -g)
-
-# iOS app target (vehicle-sim-ios)
-if(BUILD_IOS)
-    # Build static core library for iOS
-    add_library(vehicle-sim-core-ios STATIC
-        ${VEHICLE_SIM_LIB_SOURCES}
-    )
-    target_include_directories(vehicle-sim-core-ios
-        PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-    )
-    target_compile_options(vehicle-sim-core-ios PRIVATE -g)
-    set_target_properties(vehicle-sim-core-ios PROPERTIES
-        OUTPUT_NAME vehicle-sim-core
-    )
-
-    # iOS app bundle - Swift as main language
-    add_executable(vehicle-sim-ios
-        vehicle-sim-ios/VehicleSim/VehicleSimAppApp.swift
-        vehicle-sim-ios/VehicleSim/ContentView.swift
-        vehicle-sim-ios/VehicleSim/VehicleViewModel.swift
-        vehicle-sim-ios/VehicleSim/Models/TelemetryData.swift
-        vehicle-sim-ios/VehicleSim/VehicleSimWrapper.mm
-    )
-    target_include_directories(vehicle-sim-ios
-        PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/vehicle-sim-ios
-    )
-    target_link_libraries(vehicle-sim-ios
-        PRIVATE
-        vehicle-sim-core-ios
-        "-lc++"
-    )
-    set_target_properties(vehicle-sim-ios PROPERTIES
-        BUNDLE TRUE
-        BUNDLE_EXTENSION app
-        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/vehicle-sim-ios/Info.plist
-        XCODE_ATTRIBUTE_SWIFT_OBJC_BRIDGING_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/vehicle-sim-ios/VehicleSim/VehicleSim-Bridging-Header.h"
-        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
-        XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "14.0"
-    )
+# Link frameworks for macOS CLI (needed for Objective-C++ BLE code)
+if(APPLE AND NOT BUILD_IOS)
+    target_link_libraries(vehicle-sim PRIVATE ${FOUNDATION})
 endif()
 
+target_compile_options(vehicle-sim PRIVATE -g)
+endif() # NOT BUILD_IOS (closes the executable block)
+
 # Set rpath for executable to find dylibs in build directory
-if(APPLE)
+if(APPLE AND NOT BUILD_IOS)
     set_target_properties(vehicle-sim PROPERTIES
         BUILD_WITH_INSTALL_RPATH TRUE
         INSTALL_RPATH "@executable_path"
@@ -140,9 +127,9 @@ if(NOT BUILD_IOS)
     )
 endif()
 
-# Testing (optional)
+# Testing (macOS only — iOS app tested via Xcode)
 option(BUILD_TESTS "Build vehicle-sim unit tests" ON)
-if(BUILD_TESTS)
+if(BUILD_TESTS AND NOT BUILD_IOS)
     include(FetchContent)
     FetchContent_Declare(
         googletest

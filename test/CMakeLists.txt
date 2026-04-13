@@ -22,6 +22,14 @@ target_link_libraries(vehicle-sim-tests
     vehicle-sim-lib
 )
 
+# Link Objective-C runtime for macOS (needed for Objective-C++ BLE code)
+if(APPLE)
+    find_library(FOUNDATION Foundation)
+    target_link_libraries(vehicle-sim-tests PRIVATE "-lobjc")
+    target_link_libraries(vehicle-sim-tests PRIVATE ${COREBLUETOOTH})
+    target_link_libraries(vehicle-sim-tests PRIVATE ${FOUNDATION})
+endif()
+
 target_include_directories(vehicle-sim-tests
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/..

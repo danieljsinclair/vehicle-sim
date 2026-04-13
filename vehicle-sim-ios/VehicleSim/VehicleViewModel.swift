@@ -46,7 +46,7 @@ class VehicleViewModel: ObservableObject {
         }
 
         isConnected = true
-        connectionStatus = "Connected (Mock)"
+        connectionStatus = "Connected (Demo)"
 
         // Start periodic updates
         updateTimer = Timer.scheduledTimer(

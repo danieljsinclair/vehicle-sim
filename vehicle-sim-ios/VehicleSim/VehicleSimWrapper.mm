@@ -1,16 +1,10 @@
 #import "VehicleSimWrapper.h"
-#import "vehicle-sim/VehicleSim.h"
-#import "vehicle-sim/ble/platform/BLEManagerMock.h"
-#include <memory>
+#include <cmath>
+#include <chrono>
 
-using namespace vehicle_sim;
-
-@interface VehicleSimWrapper () {
-    std::unique_ptr<VehicleSimulator> _simulator;
-    std::unique_ptr<BLEManagerMock> _bleMock;
-    bool _running;
-}
-
+@interface VehicleSimWrapper ()
+@property (nonatomic) BOOL running;
+@property (nonatomic) int tick;
 @end
 
 @implementation VehicleSimWrapper
@@ -18,41 +12,73 @@ using namespace vehicle_sim;
 - (instancetype)init {
     self = [super init];
     if (self) {
-        _simulator = std::make_unique<VehicleSimulator>();
-        _bleMock = std::make_unique<BLEManagerMock>();
-
-        // Configure simulator with mock BLE platform
-        // TODO: Proper setPlatform requires exposing BLEManager access
         _running = false;
+        _tick = 0;
     }
     return self;
 }
 
 - (void)start {
     if (_running) return;
-    // TODO: Actually start simulator and BLE
     _running = true;
 }
 
 - (void)stop {
     if (!_running) return;
-    // TODO: Stop simulator
     _running = false;
 }
 
 - (TelemetryData *)getTelemetry {
-    // Placeholder: return mock data
-    // In real implementation, query VehicleSimulator for latest PhysicsData
-    // and convert to TelemetryData
-    TelemetryData *data = [[TelemetryData alloc] initWithTimestamp:NSDate.timeIntervalSinceReferenceDate
-                                                              rpm:2500.0
-                                                        speedKmh:85.0
-                                                throttlePercent:35.0
-                                                   brakePercent:0.0
-                                                           gear:4
-                                                         torque:200.0
-                                                accelerationG:0.2];
-    return data;
+    if (!_running) return nil;
+
+    _tick++;
+
+    // Simulate a driving scenario with smooth value transitions
+    double t = _tick * 0.1;  // time in seconds
+
+    // Throttle: oscillates between 0-60% with sine wave (simulating pedal input)
+    double throttle = 30.0 + 25.0 * sin(t * 0.3) + 5.0 * sin(t * 1.7);
+
+    // Speed: follows throttle with lag (vehicle accelerates/decelerates)
+    static double speed = 0.0;
+    double targetSpeed = throttle * 1.8; // throttle maps roughly to speed
+    speed += (targetSpeed - speed) * 0.05; // smooth interpolation
+
+    // RPM: correlates with speed and throttle
+    double rpm = 800 + speed * 30 + throttle * 10 + 5.0 * sin(t * 2.1);
+
+    // Brake: occasionally pulses
+    double brake = (fmod(t, 8.0) > 7.0) ? 20.0 + 10.0 * sin(t * 5.0) : 0.0;
+
+    // Acceleration: derivative of speed
+    static double lastSpeed = 0.0;
+    double acceleration = (speed - lastSpeed) * 2.0;
+    lastSpeed = speed;
+
+    // Clamp values
+    throttle = fmax(0.0, fmin(100.0, throttle));
+    speed = fmax(0.0, fmin(200.0, speed));
+    rpm = fmax(600.0, fmin(8000.0, rpm));
+    brake = fmax(0.0, fmin(100.0, brake));
+    acceleration = fmax(-1.5, fmin(1.5, acceleration));
+
+    // Gear: simple mapping from speed
+    int gear = 0;
+    if (speed > 5) gear = 1;
+    if (speed > 20) gear = 2;
+    if (speed > 40) gear = 3;
+    if (speed > 60) gear = 4;
+    if (speed > 90) gear = 5;
+    if (speed > 120) gear = 6;
+
+    return [[TelemetryData alloc] initWithTimestamp:NSDate.timeIntervalSinceReferenceDate
+                                                              rpm:rpm
+                                                        speedKmh:speed
+                                                throttlePercent:throttle
+                                                   brakePercent:brake
+                                                           gear:gear
+                                                         torque:rpm * 0.12
+                                                accelerationG:acceleration];
 }
 
 - (BOOL)isRunning {

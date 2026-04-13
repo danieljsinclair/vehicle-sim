@@ -1,25 +1,43 @@
 #include "vehicle-sim/BLEManager.h"
-#include "vehicle-sim/ble/platform/BLEManagerMock.h"
+#include "vehicle-sim/ble/platform/BLEManagerMacOS.h"
+#include "vehicle-sim/ble/platform/BLEManageriOS.h"
 #include <iostream>
+
+#if defined(__APPLE__)
+    #include <TargetConditionals.h>
+    #if TARGET_OS_MAC
+        #define PLATFORM_MACOS 1
+    #elif TARGET_OS_IPHONE
+        #define PLATFORM_IOS 1
+    #endif
+#endif
 
 namespace vehicle_sim {
 
 BLEManager::BLEManager()
-    : platform_(std::make_unique<BLEManagerMock>()) {
+    : platform_(createDefaultPlatform()) {
 }
 
 BLEManager::~BLEManager() = default;
 
+std::unique_ptr<BLEManagerBase> BLEManager::createDefaultPlatform() {
+#if defined(PLATFORM_MACOS)
+    std::cout << "[BLEManager] Creating macOS BLE platform" << std::endl;
+    return std::make_unique<BLEManagerMacOS>();
+#elif defined(PLATFORM_IOS)
+    std::cout << "[BLEManager] Creating iOS BLE platform" << std::endl;
+    return std::make_unique<BLEManageriOS>();
+#else
+    // Default to iOS for Apple platforms (most common use case)
+    // macOS CLI will use BLEManagerMacOS when built on macOS
+    std::cout << "[BLEManager] Creating default BLE platform (iOS)" << std::endl;
+    return std::make_unique<BLEManageriOS>();
+#endif
+}
+
 std::vector<BLEDeviceInfo> BLEManager::scanForDevices(int timeout_seconds) {
     if (platform_) {
-        // Wire callbacks to platform
-        if (platform_->isConnected()) {
-            // Already connected, maybe disconnect first or handle differently
-        }
-
         auto devices = platform_->scanForDevices(timeout_seconds);
-
-        // Invoke callbacks for discovered devices (already done by platform)
         return devices;
     }
     return {};
@@ -45,16 +63,26 @@ void BLEManager::disconnect() {
 }
 
 void BLEManager::onDeviceFound(DeviceCallback callback) {
-    // Set callback on underlying platform
+    device_callback_ = std::move(callback);
     if (platform_) {
-        platform_->setDeviceFoundCallback(std::move(callback));
+        platform_->setDeviceFoundCallback([this](const BLEDeviceInfo& device) {
+            // Forward to the user's callback
+            if (device_callback_) {
+                device_callback_(device);
+            }
+        });
     }
 }
 
 void BLEManager::onDataReceived(DataCallback callback) {
-    // Set callback on underlying platform
+    data_callback_ = std::move(callback);
     if (platform_) {
-        platform_->setDataReceivedCallback(std::move(callback));
+        platform_->setDataReceivedCallback([this](const std::vector<uint8_t>& data) {
+            // Forward to the user's callback
+            if (data_callback_) {
+                data_callback_(data);
+            }
+        });
     }
 }
 
@@ -66,8 +94,28 @@ std::string BLEManager::getConnectedDeviceId() const {
     return platform_ ? platform_->getConnectedDeviceId() : std::string();
 }
 
-void BLEManager::setPlatform(std::unique_ptr<BLEPlatform> platform) {
+void BLEManager::setPlatform(std::unique_ptr<BLEManagerBase> platform) {
     platform_ = std::move(platform);
+}
+
+BLEManagerBase* BLEManager::getPlatform() const {
+    return platform_.get();
+}
+
+bool BLEManager::initializeELM327() {
+    return platform_ ? platform_->initializeELM327() : false;
+}
+
+void BLEManager::startOBD2Polling(int interval_ms) {
+    if (platform_) {
+        platform_->startOBD2Polling(interval_ms);
+    }
+}
+
+void BLEManager::stopOBD2Polling() {
+    if (platform_) {
+        platform_->stopOBD2Polling();
+    }
 }
 
 } // namespace vehicle_sim

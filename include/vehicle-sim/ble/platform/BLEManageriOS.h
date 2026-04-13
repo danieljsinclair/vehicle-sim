@@ -1,52 +1,63 @@
 #pragma once
 
-#include "vehicle-sim/ble/BLEPlatform.h"
+#include "vehicle-sim/ble/BLEManagerBase.h"
 #include "vehicle-sim/ble/BLEDeviceInfo.h"
 
-// Forward declarations for CoreBluetooth (framework available on iOS/macOS)
+#include <atomic>
+
+// Forward declarations for CoreBluetooth to avoid including Objective-C headers in C++
 #ifdef __APPLE__
-    #import <CoreBluetooth/CoreBluetooth.h>
+    #ifdef __OBJC__
+        #import <CoreBluetooth/CoreBluetooth.h>
+    #else
+        typedef struct objc_object CBCentralManager;
+        typedef struct objc_object CBPeripheral;
+        typedef struct objc_object CBCharacteristic;
+    #endif
 #endif
 
 namespace vehicle_sim {
 
-/**
- * @brief iOS BLE platform implementation using CoreBluetooth.
- *
- * Uses Apple's CoreBluetooth framework to scan, connect, and communicate
- * with BLE peripherals (Tesla OBD2 adapter). Requires iOS 15+ or macOS 12+.
- */
-class BLEManageriOS : public BLEPlatform {
+class BLEManageriOS : public BLEManagerBase {
 public:
     BLEManageriOS();
     ~BLEManageriOS() override;
 
-    // BLEPlatform interface
     std::vector<BLEDeviceInfo> scanForDevices(int timeout_seconds) override;
     bool connect(const std::string& device_identifier) override;
     void disconnect() override;
-    void setDeviceFoundCallback(DeviceCallback callback) override;
-    void setDataReceivedCallback(DataCallback callback) override;
+    void send(const std::vector<uint8_t>& data) override;
     bool isConnected() const override;
     std::string getConnectedDeviceId() const override;
 
+    int getBluetoothState() const;
+    bool isBluetoothReady() const;
+    bool initializeELM327();
+
+    // Callback handlers (called by Objective-C delegate)
+    void onDeviceDiscovered(const BLEDeviceInfo& device);
+    void onConnectionStateChanged(bool is_connected, const std::string& device_id);
+    void onServicesDiscovered();
+    void onCharacteristicsDiscovered();
+    void onCharacteristicNotification(const std::vector<uint8_t>& data);
+    void onBluetoothStateChanged(bool isPoweredOn);
+    void onDataReceived(const std::vector<uint8_t>& data);
+
+    // Public wrapper for base class protected method (needed by ObjC delegate)
+    void addDevice(const BLEDeviceInfo& device) { addDiscoveredDevice(device); }
+
 private:
 #ifdef __APPLE__
-    // CoreBluetooth central manager
-    CBCentralManager* central_manager_;
-    CBPeripheral* connected_peripheral_;
+    CBCentralManager* central_manager_ = nullptr;
+    CBPeripheral* connected_peripheral_ = nullptr;
+    void* delegate_ = nullptr;
 #endif
 
-    bool connected_;
+    std::atomic<bool> connected_;
     std::string connected_device_id_;
-    DeviceCallback device_callback_;
-    DataCallback data_callback_;
 
-    // Platform-specific callbacks from CoreBluetooth
-    // These will be called from Objective-C++ delegate
-    void onDeviceDiscovered(const BLEDeviceInfo& device);
-    void onDataReceived(const std::vector<uint8_t>& data);
-    void onConnectionStateChanged(bool is_connected);
+    bool waitForBluetoothReady(int timeout_ms);
+    CBPeripheral* findPeripheralByAddress(const std::string& address);
 };
 
 } // namespace vehicle_sim

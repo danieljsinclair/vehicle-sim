@@ -3,6 +3,8 @@
    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>CFBundleExecutable</key>
+    <string>VehicleSimApp</string>
     <key>CFBundleDisplayName</key>
     <string>VehicleSim</string>
     <key>CFBundleIdentifier</key>
@@ -17,6 +19,10 @@
     <string>1</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>VehicleSim needs Bluetooth to connect to your OBD2 adapter and display real-time Tesla telemetry data.</string>
+    <key>NSBluetoothPeripheralUsageDescription</key>
+    <string>VehicleSim needs Bluetooth to connect to your OBD2 adapter and display real-time Tesla telemetry data.</string>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>

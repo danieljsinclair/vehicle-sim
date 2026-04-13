@@ -5,11 +5,23 @@
 #include <functional>
 #include <memory>
 
-#include "ble/BLEPlatform.h"
-#include "ble/BLEDeviceInfo.h"
+#include "vehicle-sim/ble/BLEManagerBase.h"
+#include "vehicle-sim/ble/BLEDeviceInfo.h"
 
 namespace vehicle_sim {
 
+/**
+ * @brief High-level BLE manager that selects platform at runtime.
+ *
+ * This is the main entry point for BLE operations. It selects the appropriate
+ * platform implementation (macOS or iOS) based on the build target.
+ *
+ * Usage:
+ *   auto ble_manager = std::make_unique<BLEManager>();
+ *   auto devices = ble_manager->scanForDevices(5);
+ *   ble_manager->connect(device_address);
+ *   ble_manager->onDataReceived([](const auto& data) { ... });
+ */
 class BLEManager {
 public:
     using DeviceCallback = std::function<void(const BLEDeviceInfo& device)>;
@@ -40,12 +52,27 @@ public:
     std::string getConnectedDeviceId() const;
 
     // Set the BLE platform implementation (for testing/configuration)
-    void setPlatform(std::unique_ptr<BLEPlatform> platform);
+    void setPlatform(std::unique_ptr<BLEManagerBase> platform);
+
+    // Get the underlying platform (for advanced usage)
+    BLEManagerBase* getPlatform() const;
+
+    // Initialize ELM327 adapter (send AT commands after connection)
+    bool initializeELM327();
+
+    // Start polling OBD2 PIDs at specified interval
+    void startOBD2Polling(int interval_ms = 200);
+
+    // Stop OBD2 PID polling
+    void stopOBD2Polling();
 
 private:
-    std::unique_ptr<BLEPlatform> platform_;
+    std::unique_ptr<BLEManagerBase> platform_;
     DeviceCallback device_callback_;
     DataCallback data_callback_;
+
+    // Factory method to create platform instance based on build target
+    static std::unique_ptr<BLEManagerBase> createDefaultPlatform();
 };
 
 } // namespace vehicle_sim

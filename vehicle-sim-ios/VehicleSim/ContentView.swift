@@ -40,6 +40,9 @@ struct ContentView: View {
                         Text(viewModel.connectionStatus)
                             .foregroundColor(viewModel.isConnected ? .green : .red)
                     }
+                    Text(viewModel.isConnected ? "Showing demo data" : "Tap Start for demo")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
 
                 Section(header: Text("Engine")) {
