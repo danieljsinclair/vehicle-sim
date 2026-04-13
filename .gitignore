@@ -48,8 +48,6 @@ Testing/
 test/Testing/
 test/CTestTestfile.cmake
 test/Makefile
-test/integration/
-test/unit/
 *.test
 *_test
 *_tests
@@ -82,3 +80,19 @@ _deps/
 .swarm/memory.db-wal
 .swarm/schema.sql
 .swarm/state.json
+
+# Project-local tool config (not shared)
+.mcp.json
+CLAUDE.md
+DEMO.md
+
+# Database
+*.db
+
+# Xcode user data and workspace
+*.xcworkspace/
+xcuserdata/
+*.xcuserdatad/
+
+# Backups
+*.backup
