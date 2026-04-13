@@ -1,13 +1,11 @@
 #import "VehicleSimWrapper.h"
+#import <Foundation/Foundation.h>
 #include <cmath>
-#include <chrono>
 
-@interface VehicleSimWrapper ()
-@property (nonatomic) BOOL running;
-@property (nonatomic) int tick;
-@end
-
-@implementation VehicleSimWrapper
+@implementation VehicleSimWrapper {
+    BOOL _running;
+    int _tick;
+}
 
 - (instancetype)init {
     self = [super init];
