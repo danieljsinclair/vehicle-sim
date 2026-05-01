@@ -30,6 +30,27 @@ struct DBCValueEntry {
 };
 
 /**
+ * Parameter object for DBC signal definition construction.
+ *
+ * Groups all signal parameters into a single struct to improve
+ * readability and maintainability of construction calls.
+ */
+struct DBCSignalParams {
+    std::uint16_t canId = 0;
+    std::string name;
+    std::size_t startBit = 0;
+    std::size_t bitLength = 0;
+    DBCByteOrder byteOrder = DBCByteOrder::Intel;
+    double scale = 0.0;
+    double offset = 0.0;
+    bool isSigned = false;
+    std::string unit;
+    double min = 0.0;
+    double max = 0.0;
+    std::vector<DBCValueEntry> valueTable{};
+};
+
+/**
  * Signal definition extracted from a DBC file.
  *
  * Represents one signal within a CAN message, containing all
@@ -39,9 +60,19 @@ struct DBCValueEntry {
  */
 struct DBCSignalDefinition final {
     /**
-     * Construct a complete signal definition.
+     * Construct a complete signal definition from params.
+     *
+     * @param params Struct containing all signal parameters
+     */
+    explicit DBCSignalDefinition(
+        const DBCSignalParams& params
+    ) noexcept;
+
+    /**
+     * Construct a complete signal definition (legacy constructor).
      *
      * All parameters are required. Use defaults for optional values.
+     * Delegates to the params constructor.
      */
     DBCSignalDefinition(
         std::uint16_t      canId,

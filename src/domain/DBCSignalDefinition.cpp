@@ -4,6 +4,23 @@
 namespace vehicle_sim::domain {
 
 DBCSignalDefinition::DBCSignalDefinition(
+    const DBCSignalParams& params
+) noexcept
+    : canId(params.canId)
+    , name(params.name)
+    , startBit(params.startBit)
+    , bitLength(params.bitLength)
+    , byteOrder(params.byteOrder)
+    , scale(params.scale)
+    , offset(params.offset)
+    , isSigned(params.isSigned)
+    , unit(params.unit)
+    , min(params.min)
+    , max(params.max)
+    , valueTable(params.valueTable)
+{}
+
+DBCSignalDefinition::DBCSignalDefinition(
     std::uint16_t canId,
     std::string name,
     std::size_t startBit,
@@ -17,34 +34,51 @@ DBCSignalDefinition::DBCSignalDefinition(
     double max,
     std::vector<DBCValueEntry> valueTable
 ) noexcept
-    : canId(canId)
-    , name(std::move(name))
-    , startBit(startBit)
-    , bitLength(bitLength)
-    , byteOrder(byteOrder)
-    , scale(scale)
-    , offset(offset)
-    , isSigned(isSigned)
-    , unit(std::move(unit))
-    , min(min)
-    , max(max)
-    , valueTable(std::move(valueTable))
+    : DBCSignalDefinition(DBCSignalParams{
+        canId,
+        std::move(name),
+        startBit,
+        bitLength,
+        byteOrder,
+        scale,
+        offset,
+        isSigned,
+        std::move(unit),
+        min,
+        max,
+        std::move(valueTable)
+    })
 {}
 
 bool DBCSignalDefinition::operator==(
     const DBCSignalDefinition& other
 ) const noexcept {
-    return canId == other.canId
-        && name == other.name
-        && startBit == other.startBit
-        && bitLength == other.bitLength
-        && byteOrder == other.byteOrder
-        && scale == other.scale
-        && offset == other.offset
-        && isSigned == other.isSigned
-        && unit == other.unit
-        && min == other.min
-        && max == other.max;
+    if (canId != other.canId
+        || name != other.name
+        || startBit != other.startBit
+        || bitLength != other.bitLength
+        || byteOrder != other.byteOrder
+        || scale != other.scale
+        || offset != other.offset
+        || isSigned != other.isSigned
+        || unit != other.unit
+        || min != other.min
+        || max != other.max) {
+        return false;
+    }
+
+    if (valueTable.size() != other.valueTable.size()) {
+        return false;
+    }
+
+    for (std::size_t i = 0; i < valueTable.size(); ++i) {
+        if (valueTable[i].value != other.valueTable[i].value
+            || valueTable[i].description != other.valueTable[i].description) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 bool DBCSignalDefinition::operator!=(

@@ -63,25 +63,19 @@ std::uint64_t DBCSignalMapper::extractRawBits(
             }
         }
     } else {
-        // Motorola (@0): bit numbering starts from MSB
-        const std::size_t startByte = definition.startBit / 8;
-        const std::size_t startBitInByte = definition.startBit % 8;
+        // Motorola (@0): MSB at startBit, reversed bit numbering within bytes
+        // DBC bit n → byte = n/8, bit_within_byte = 7 - (n%8)
+        // Signal MSB at startBit, bits progress in increasing DBC position
+        for (std::size_t i = 0; i < definition.bitLength; ++i) {
+            const std::size_t dbcBit = definition.startBit + i;
+            const std::size_t byteIdx = dbcBit / 8;
+            const std::size_t bitInByte = 7 - (dbcBit % 8);
+            const std::size_t resultBit = definition.bitLength - 1 - i;
 
-        std::uint64_t raw = 0;
-        for (std::size_t b = 0; b < frame.size() && b < 8; ++b) {
-            raw |= static_cast<std::uint64_t>(frame[b]) << (b * 8);
+            if (byteIdx < frame.size() && (frame[byteIdx] & (1ULL << bitInByte))) {
+                result |= (1ULL << resultBit);
+            }
         }
-
-        // Extract bits in Motorola order (MSB first within signal)
-        std::uint64_t mask = (definition.bitLength == 64)
-            ? ~0ULL
-            : (1ULL << definition.bitLength) - 1;
-
-        std::size_t msbBitPos = definition.startBit;
-        std::size_t lsbBitPos = definition.startBit + definition.bitLength - 1;
-        std::size_t shift = lsbBitPos;
-
-        result = (raw >> shift) & mask;
     }
 
     return result;

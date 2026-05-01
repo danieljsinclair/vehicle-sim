@@ -441,6 +441,81 @@ TEST_F(DBCSignalMapperTest, Extracts1BitBooleanSignal) {
     EXPECT_DOUBLE_EQ(*result, 1.0);
 }
 
+// ================================================
+// Motorola Byte Order Decode Tests
+// Verified using DBC convention: bit n → byte=n/8, bit_within_byte=7-(n%8)
+// MSB at startBit, LSB at startBit+bitLength-1
+// ================================================
+
+TEST_F(DBCSignalMapperTest, ExtractsMotorola8BitSignalAtBit7) {
+    // 8-bit Motorola at bit 7, scale 1, offset 0
+    // DBC bit 7 = byte 0 bit 0 (MSB of signal)
+    // DBC bits 8-14 = byte 1 bits 7,6,5,4,3,2,1
+    // Value 0xAB = 10101011:
+    //   bit7(result) → byte0 bit0 = 1 → frame[0] = 0x01
+    //   bit6(result) → byte1 bit7 = 0
+    //   bit5(result) → byte1 bit6 = 1 → frame[1] |= 0x40
+    //   bit4(result) → byte1 bit5 = 0
+    //   bit3(result) → byte1 bit4 = 1 → frame[1] |= 0x10
+    //   bit2(result) → byte1 bit3 = 0
+    //   bit1(result) → byte1 bit2 = 1 → frame[1] |= 0x04
+    //   bit0(result) → byte1 bit1 = 1 → frame[1] |= 0x02
+    // frame[0] = 0x01, frame[1] = 0x56
+    canFrame[0] = 0x01;
+    canFrame[1] = 0x56;
+
+    const DBCSignalDefinition def(
+        100, "MotoTest", 7, 8,
+        DBCByteOrder::Motorola, 1.0, 0.0, false, "", 0.0, 255.0
+    );
+
+    auto result = DBCSignalMapper::mapSignal(canFrame, def);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_DOUBLE_EQ(*result, 171.0);  // 0xAB
+}
+
+TEST_F(DBCSignalMapperTest, ExtractsMotorola4BitSignalWithinByte) {
+    // 4-bit Motorola at bit 3, scale 1, offset 0
+    // DBC bit 3 = byte 0 bit 4 (MSB of signal)
+    // DBC bit 4 = byte 0 bit 3
+    // DBC bit 5 = byte 0 bit 2
+    // DBC bit 6 = byte 0 bit 1
+    // Value 0xA = 1010:
+    //   bit3(result) → byte0 bit4 = 1 → 0x10
+    //   bit2(result) → byte0 bit3 = 0
+    //   bit1(result) → byte0 bit2 = 1 → 0x04
+    //   bit0(result) → byte0 bit1 = 0
+    // frame[0] = 0x14
+    canFrame[0] = 0x14;
+
+    const DBCSignalDefinition def(
+        100, "MotoTest", 3, 4,
+        DBCByteOrder::Motorola, 1.0, 0.0, false, "", 0.0, 15.0
+    );
+
+    auto result = DBCSignalMapper::mapSignal(canFrame, def);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_DOUBLE_EQ(*result, 10.0);  // 0xA
+}
+
+TEST_F(DBCSignalMapperTest, ExtractsMotorola16BitSpanningTwoBytes) {
+    // 16-bit Motorola at bit 7, scale 1, offset 0
+    // Value 0x1234 = 4660
+    // Computer-verified byte pattern: frame[1]=0x24, frame[2]=0x68
+    canFrame[0] = 0x00;
+    canFrame[1] = 0x24;
+    canFrame[2] = 0x68;
+
+    const DBCSignalDefinition def(
+        100, "MotoTest", 7, 16,
+        DBCByteOrder::Motorola, 1.0, 0.0, false, "", 0.0, 65535.0
+    );
+
+    auto result = DBCSignalMapper::mapSignal(canFrame, def);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_DOUBLE_EQ(*result, 4660.0);  // 0x1234
+}
+
 TEST_F(DBCSignalMapperTest, MapsSignalByCanIdAndName) {
     // Setup signal definitions map
     std::unordered_map<uint16_t, std::vector<DBCSignalDefinition>> definitions;
