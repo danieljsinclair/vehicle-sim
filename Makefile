@@ -43,7 +43,7 @@ ios: test native app-icons
 # Build signed Release for physical device
 ios-signed: test native app-icons
 	@echo "--- Building Release for Physical iOS Device ---"
-	@xcodebuild -project vehicle-sim-ios/VehicleSim/VehicleSimApp.xcodeproj -scheme VehicleSimApp -configuration Release -destination 'generic/platform=iOS' -derivedDataPath vehicle-sim-ios/VehicleSim/build clean build 2>&1 | tail -20
+	@xcodebuild -project vehicle-sim-ios/VehicleSim/VehicleSimApp.xcodeproj -scheme VehicleSimApp -configuration Release -destination 'generic/platform=iOS' -derivedDataPath vehicle-sim-ios/VehicleSim/build -allowProvisioningUpdates clean build 2>&1 | tail -20
 	@echo "Build output in vehicle-sim-ios/VehicleSim/build/Release-iphoneos/VehicleSimApp.app"
 
 # Deploy signed build to attached iPhone (install only)

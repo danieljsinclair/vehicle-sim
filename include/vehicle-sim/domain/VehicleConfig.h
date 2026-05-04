@@ -54,19 +54,24 @@ struct VehicleConfig final {
      */
     std::string canBus;
 
+    /** True if this vehicle uses raw CAN frames (via DBC), false for standard OBD2 PID responses. */
+    bool isCANProtocol = false;
+
     /**
-     * Construct a minimal vehicle config.
+     * Construct a vehicle config.
      *
      * @param dbcFilePath      Path to DBC file
      * @param vehicleName      Human-readable vehicle name
      * @param signalMappings   Map of DBC signal → VehicleSignal field
      * @param canBus           Optional CAN bus name
+     * @param isCANProtocol    True for CAN/DBC vehicles, false for OBD2
      */
     VehicleConfig(
         std::string dbcFilePath,
         std::string vehicleName,
         std::unordered_map<std::string, std::string> signalMappings,
-        std::string canBus = ""
+        std::string canBus = "",
+        bool isCANProtocol = false
     ) noexcept;
 
     // Default copy/move

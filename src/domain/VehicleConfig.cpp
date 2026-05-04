@@ -6,12 +6,14 @@ VehicleConfig::VehicleConfig(
     std::string dbcFilePath,
     std::string vehicleName,
     std::unordered_map<std::string, std::string> signalMappings,
-    std::string canBus
+    std::string canBus,
+    bool isCANProtocol
 ) noexcept
     : dbcFilePath(std::move(dbcFilePath))
     , vehicleName(std::move(vehicleName))
     , signalMappings(std::move(signalMappings))
     , canBus(std::move(canBus))
+    , isCANProtocol(isCANProtocol)
 {}
 
 bool VehicleConfig::operator==(
@@ -20,7 +22,8 @@ bool VehicleConfig::operator==(
     return dbcFilePath == other.dbcFilePath
         && vehicleName == other.vehicleName
         && signalMappings == other.signalMappings
-        && canBus == other.canBus;
+        && canBus == other.canBus
+        && isCANProtocol == other.isCANProtocol;
 }
 
 bool VehicleConfig::operator!=(

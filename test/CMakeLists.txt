@@ -22,11 +22,18 @@ add_executable(vehicle-sim-tests
     domain/DBCFileParser.test.cpp
     domain/VehicleSignalFactory.test.cpp
     domain/EventDispatcher.test.cpp
+    domain/VehicleDetector.test.cpp
+    domain/DBCSignalTranslator.test.cpp
+    domain/DBCTranslationService.test.cpp
+    domain/DefaultVehicleConfigs.test.cpp
     ble/BLEManager.test.cpp
     presentation/TelemetryFormatter.test.cpp
+    presentation/VehicleSignalFormatter.test.cpp
+    cli/CliOptions.test.cpp
     boundary/TeslaBLETransport.test.cpp
     boundary/OBD2Transport.test.cpp
     integration/EventDispatcherIntegration.test.cpp
+    integration/DBCPipelineIntegration.test.cpp
 )
 
 target_link_libraries(vehicle-sim-tests
@@ -50,4 +57,4 @@ target_include_directories(vehicle-sim-tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-add_test(NAME vehicle-sim-tests COMMAND vehicle-sim-tests)
+add_test(NAME vehicle-sim-tests COMMAND vehicle-sim-tests WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})

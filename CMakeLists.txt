@@ -64,6 +64,12 @@ set(VEHICLE_SIM_LIB_SOURCES
     src/domain/VehicleSignalFactory.cpp
     src/domain/EventDispatcher.cpp
     src/ble/OBD2Transport.cpp
+    src/domain/VehicleDetector.cpp
+    src/domain/DBCSignalTranslator.cpp
+    src/domain/DBCTranslationService.cpp
+    src/domain/DefaultVehicleConfigs.cpp
+    src/cli/CliOptions.cpp
+    src/presentation/VehicleSignalFormatter.cpp
 )
 
 # Add platform-specific BLE implementations for macOS builds
