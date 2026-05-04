@@ -19,6 +19,15 @@ elseif(LINUX)
     # Linux specific libraries if needed
 endif()
 
+# CLI11 for command-line parsing
+include(FetchContent)
+FetchContent_Declare(
+    cli11
+    GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
+    GIT_TAG v2.4.2
+)
+FetchContent_MakeAvailable(cli11)
+
 # iOS build option — builds C++ library only (iOS app uses standalone Xcode project)
 option(BUILD_IOS "Build C++ library for iOS" OFF)
 if(BUILD_IOS)
@@ -94,6 +103,7 @@ add_library(vehicle-sim-lib
 target_link_libraries(vehicle-sim-lib
     PUBLIC
     Threads::Threads
+    CLI11::CLI11
 )
 
 # Link CoreBluetooth and Foundation on Apple platforms
@@ -124,6 +134,7 @@ add_executable(vehicle-sim
 target_link_libraries(vehicle-sim
     PRIVATE
     vehicle-sim-lib
+    CLI11::CLI11
 )
 
 target_compile_options(vehicle-sim PRIVATE -g)

@@ -5,6 +5,7 @@
 
 namespace vehicle_sim::domain {
 class VehicleConfigRegistry;
+class VehicleConfig;
 }
 
 namespace vehicle_sim::cli {
@@ -35,6 +36,7 @@ struct CliOptions {
 };
 
 // Parse command-line arguments into a structured result.
+// Throws CLI::ParseError on --help (caller should catch and call app.exit(e)).
 CliOptions parseArgs(int argc, char* argv[]);
 
 // Display help text including registered vehicles from the registry.

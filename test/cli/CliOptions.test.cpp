@@ -169,7 +169,6 @@ TEST_F(CliOptionsTest, UnknownArgReturnsError) {
     auto opts = parseArgs(args.argc(), args.argv());
 
     EXPECT_FALSE(opts.error_message.empty());
-    EXPECT_NE(opts.error_message.find("Unknown"), std::string::npos);
     EXPECT_NE(opts.error_message.find("bogus"), std::string::npos);
 }
 
