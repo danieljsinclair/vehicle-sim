@@ -1,7 +1,7 @@
 #include "vehicle-sim/domain/DBCSignalMapper.h"
+#include "vehicle-sim/domain/CANDecoder.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstdint>
 
 namespace vehicle_sim::domain {
@@ -17,7 +17,7 @@ std::optional<double> DBCSignalMapper::mapSignal(
 
     const auto rawBits = extractRawBits(frame, definition);
     if (definition.isSigned) {
-        const auto signedVal = toSigned(rawBits, definition.bitLength);
+        const auto signedVal = CANDecoder::toSigned(rawBits, definition.bitLength);
         double physical = static_cast<double>(signedVal) * definition.scale + definition.offset;
         return std::clamp(physical, definition.min, definition.max);
     }
@@ -79,19 +79,6 @@ std::uint64_t DBCSignalMapper::extractRawBits(
     }
 
     return result;
-}
-
-std::int64_t DBCSignalMapper::toSigned(
-    std::uint64_t raw,
-    std::size_t bitLength
-) noexcept {
-    if (bitLength >= 64) return static_cast<std::int64_t>(raw);
-
-    const std::uint64_t signBit = 1ULL << (bitLength - 1);
-    if (raw & signBit) {
-        raw |= ~((1ULL << bitLength) - 1);
-    }
-    return static_cast<std::int64_t>(raw);
 }
 
 } // namespace vehicle_sim::domain

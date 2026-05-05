@@ -2,8 +2,7 @@
 
 #include <vector>
 #include <cstdint>
-#include <optional>
-#include "vehicle-sim/domain/ISignalTranslator.h"
+#include "vehicle-sim/domain/CANTranslatorBase.h"
 
 namespace vehicle_sim::domain {
 
@@ -25,7 +24,7 @@ namespace vehicle_sim::domain {
  *   280 (0x118) DI_systemStatus — accelerator pedal, brake state
  *   297 (0x129) SCCM_steeringAngleSensor — steering angle
  */
-class AudiMLBTranslator final : public ISignalTranslator {
+class AudiMLBTranslator final : public CANTranslatorBase {
 public:
     AudiMLBTranslator();
     ~AudiMLBTranslator() override = default;
@@ -33,25 +32,12 @@ public:
     AudiMLBTranslator(const AudiMLBTranslator&) = delete;
     AudiMLBTranslator& operator=(const AudiMLBTranslator&) = delete;
 
-    [[nodiscard]] bool isValidPacket(
-        const std::vector<uint8_t>& rawData
-    ) const noexcept override;
-
-    [[nodiscard]] std::optional<VehicleSignal> translate(
-        const std::vector<uint8_t>& rawData
-    ) const noexcept override;
-
 private:
-    static constexpr std::size_t CAN_DATA_OFFSET = 2;  // 2 bytes for CAN ID
-    static constexpr std::size_t CAN_FRAME_SIZE = 10;   // 2 ID + 8 data
-
-    // CAN IDs from vw_mlb.dbc
+    // CAN IDs from vw_mlb.dbc (Audi-specific)
     static constexpr uint16_t CAN_ID_ESP_01 = 256;
     static constexpr uint16_t CAN_ID_ESP_02 = 257;
     static constexpr uint16_t CAN_ID_ESP_03 = 259;
     static constexpr uint16_t CAN_ID_ESP_05 = 262;
-    static constexpr uint16_t CAN_ID_DI_SYSTEM = 280;
-    static constexpr uint16_t CAN_ID_SCCM_STEER = 297;
 
     // ESP_01 signal: ESP_v_Signal (vehicle speed)
     static constexpr std::size_t ESP01_SPEED_START_BIT = 32;
@@ -72,41 +58,13 @@ private:
     static constexpr double ESP05_BRAKE_OFFSET = -30.0;      // bar
     static constexpr double BRAKE_PRESSURE_MAX_BAR = 200.0;  // 0 bar = 0%, 200 bar = 100%
 
-    // DI_systemStatus signal: DI_accelPedalPos (shared with Tesla)
-    static constexpr std::size_t DI_PEDAL_START_BIT = 32;
-    static constexpr std::size_t DI_PEDAL_BIT_LENGTH = 8;
-    static constexpr double DI_PEDAL_SCALE = 0.4;            // % per count
-
-    // DI_systemStatus signal: DI_brakePedalState (shared with Tesla)
-    static constexpr std::size_t DI_BRAKE_STATE_START_BIT = 17;
-    static constexpr std::size_t DI_BRAKE_STATE_BIT_LENGTH = 2;
-    static constexpr double BRAKE_PEDAL_PRESSED_PERCENT = 50.0;  // binary state → 50%
-
-    // SCCM_steeringAngleSensor signal: SCCM_steeringAngle (shared with Tesla)
-    static constexpr std::size_t SCCM_STEER_START_BIT = 16;
-    static constexpr std::size_t SCCM_STEER_BIT_LENGTH = 14;
-    static constexpr double SCCM_STEER_SCALE = 0.1;          // deg per count
-    static constexpr double SCCM_STEER_OFFSET = -819.2;      // deg
-
-    [[nodiscard]] static uint16_t extractCANId(
-        const std::vector<uint8_t>& frame
-    ) noexcept;
+    [[nodiscard]] bool isKnownCANId(uint16_t id) const noexcept override;
+    void decodeFrame(uint16_t canId, const std::vector<uint8_t>& data) const override;
 
     void decodeESP01(const std::vector<uint8_t>& data) const;
     void decodeESP02(const std::vector<uint8_t>& data) const;
     void decodeESP03(const std::vector<uint8_t>& data) const;
     void decodeESP05(const std::vector<uint8_t>& data) const;
-    void decodeDISystem(const std::vector<uint8_t>& data) const;
-    void decodeSCCMSteering(const std::vector<uint8_t>& data) const;
-
-    [[nodiscard]] std::optional<VehicleSignal> buildSignal() const noexcept;
-
-    // Accumulated state across CAN frames
-    mutable double lastSpeedKmh_ = 0.0;
-    mutable double lastThrottlePercent_ = 0.0;
-    mutable double lastAccelerationG_ = 0.0;
-    mutable double lastBrakePercent_ = 0.0;
-    mutable double lastSteeringAngleDeg_ = 0.0;
 };
 
 } // namespace vehicle_sim::domain

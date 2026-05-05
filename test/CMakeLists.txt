@@ -15,6 +15,7 @@ add_executable(vehicle-sim-tests
     domain/CANDecoder.test.cpp
     domain/AudiMLBTranslator.test.cpp
     domain/TeslaCANTranslator.test.cpp
+    domain/CANTranslatorBase.test.cpp
     domain/VehicleSignalEV.test.cpp
     domain/CANSignalDecoderShared.test.cpp
     domain/CANSignalDecoderBase.test.cpp

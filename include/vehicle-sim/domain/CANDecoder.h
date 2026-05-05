@@ -48,15 +48,22 @@ public:
         bool isSigned
     ) noexcept;
 
+    /**
+     * Convert raw unsigned to signed using two's complement sign extension.
+     *
+     * @param raw       Raw unsigned value
+     * @param bitLength Width of the signal in bits
+     * @return Signed value (two's complement)
+     */
+    [[nodiscard]] static std::int64_t toSigned(
+        std::uint64_t raw,
+        std::size_t bitLength
+    ) noexcept;
+
 private:
     [[nodiscard]] static std::uint64_t extractRawBits(
         const std::vector<uint8_t>& frame,
         std::size_t startBit,
-        std::size_t bitLength
-    ) noexcept;
-
-    [[nodiscard]] static std::int64_t toSigned(
-        std::uint64_t raw,
         std::size_t bitLength
     ) noexcept;
 };

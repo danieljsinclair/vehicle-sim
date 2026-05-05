@@ -76,20 +76,6 @@ private:
         const std::vector<std::uint8_t>& frame,
         const DBCSignalDefinition& definition
     ) noexcept;
-
-    /**
-     * Convert raw unsigned to signed if signal is signed.
-     *
-     * Applies two's complement sign extension.
-     *
-     * @param raw       Raw unsigned value
-     * @param bitLength Width of the signal in bits
-     * @return Signed value (two's complement)
-     */
-    [[nodiscard]] static std::int64_t toSigned(
-        std::uint64_t raw,
-        std::size_t bitLength
-    ) noexcept;
 };
 
 } // namespace vehicle_sim::domain

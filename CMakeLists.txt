@@ -62,6 +62,7 @@ set(VEHICLE_SIM_LIB_SOURCES
     src/domain/AudiSignalTranslator.cpp
     src/domain/AudiMLBTranslator.cpp
     src/domain/TeslaCANTranslator.cpp
+    src/domain/CANTranslatorBase.cpp
     src/domain/CANDecoder.cpp
     src/domain/CANSignalDecoderBase.cpp
     src/domain/ITimeProvider.cpp
