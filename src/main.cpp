@@ -124,7 +124,8 @@ namespace {
         vehicle_sim::domain::DBCTranslationService& translationService,
         const std::string& address,
         const vehicle_sim::domain::VehicleConfig* activeConfig,
-        int updateIntervalMs
+        int updateIntervalMs,
+        vehicle_sim::domain::VehicleProtocol protocol
     ) {
         using namespace vehicle_sim;
 
@@ -133,11 +134,13 @@ namespace {
         std::atomic<int> signalCount{0};
         std::atomic<bool> dataReceived{false};
 
+        const char* protocolLabel = (protocol == domain::VehicleProtocol::CAN) ? "CAN" : "OBD2";
+
         bleManager.onDataReceived([&](const std::vector<std::uint8_t>& data) {
             dataReceived = true;
 
             if (data.size() >= RAW_DATA_LOG_MIN_LENGTH) {
-                std::cout << "[OBD2] Raw response: ";
+                std::cout << "[" << protocolLabel << "] Raw response: ";
                 for (auto b : data) {
                     std::cout << std::hex << std::setfill('0') << std::setw(2) << (int)b << " ";
                 }
@@ -164,52 +167,35 @@ namespace {
         std::cout << "Connected! Waiting for service discovery...\n";
         std::this_thread::sleep_for(std::chrono::seconds(SERVICE_DISCOVERY_WAIT_S));
 
-        // Auto-detect vehicle type
-        std::cout << "Initializing OBD2 with auto-detection...\n";
-        auto detectionResult = bleManager.initializeOBD2WithDetection();
-
-        // Process detection result
-        std::string vehicleType;
-        const vehicle_sim::domain::VehicleConfig* detectedConfig = nullptr;
-
-        if (detectionResult && !detectionResult->suggestedVehicleId.empty()) {
-            std::string makeStr;
-            switch (detectionResult->make) {
-                case domain::VehicleMake::Tesla: makeStr = "Tesla"; break;
-                case domain::VehicleMake::Audi: makeStr = "Audi"; break;
-                case domain::VehicleMake::Volkswagen: makeStr = "Volkswagen"; break;
-                case domain::VehicleMake::BMW: makeStr = "BMW"; break;
-                case domain::VehicleMake::MercedesBenz: makeStr = "Mercedes-Benz"; break;
-                case domain::VehicleMake::Generic: makeStr = "Generic"; break;
-                default: makeStr = "Unknown"; break;
-            }
-            std::cout << "[Auto-detect] Vehicle detected: " << makeStr << "\n";
-            std::cout << "[Auto-detect] VIN: " << detectionResult->vin << "\n";
-            std::cout << "[Auto-detect] Suggested config: " << detectionResult->suggestedVehicleId << "\n";
-
-            // Reload vehicle config with detected vehicle
-            if (translationService.loadVehicle(detectionResult->suggestedVehicleId, domain::VehicleProtocol::OBD2)) {
-                detectedConfig = translationService.registry().getConfig(detectionResult->suggestedVehicleId);
-                vehicleType = detectionResult->suggestedVehicleId;
-                std::cout << "[Auto-detect] Loaded vehicle config: " << vehicleType << "\n";
-            } else {
-                std::cout << "[Auto-detect] Failed to load detected config, using: " << vehicleType << "\n";
-                detectedConfig = activeConfig;
+        // Initialize adapter based on protocol
+        if (protocol == domain::VehicleProtocol::CAN) {
+            std::cout << "Initializing CAN monitor mode...\n";
+            if (!bleManager.initializeCANMonitor()) {
+                std::cerr << "Failed to initialize ELM327 for CAN monitoring\n";
+                return 1;
             }
         } else {
-            std::cout << "[Auto-detect] Detection failed or no result, using: " << vehicleType << "\n";
-            detectedConfig = activeConfig;
+            std::cout << "Initializing OBD2 adapter...\n";
+            if (!bleManager.initializeELM327()) {
+                std::cerr << "Failed to initialize ELM327 adapter\n";
+                return 1;
+            }
         }
 
         std::this_thread::sleep_for(std::chrono::seconds(ELM327_INIT_WAIT_S));
 
-        std::cout << "Starting OBD2 data polling (interval: " << updateIntervalMs << "ms)...\n";
+        std::cout << "Starting " << protocolLabel << " data polling (interval: " << updateIntervalMs << "ms)...\n";
         std::cout << "Press Ctrl+C to stop\n";
-        if (detectedConfig) {
-            presentation::printTelemetryHeader(std::cout, *detectedConfig);
+        if (activeConfig) {
+            presentation::printTelemetryHeader(std::cout, *activeConfig);
         }
 
-        bleManager.startOBD2Polling(updateIntervalMs);
+        // Use appropriate polling method based on protocol
+        if (protocol == domain::VehicleProtocol::CAN) {
+            bleManager.startCANMonitor(updateIntervalMs);
+        } else {
+            bleManager.startOBD2Polling(updateIntervalMs);
+        }
 
         auto lastActivity = std::chrono::steady_clock::now();
         int noDataCount = 0;
@@ -240,7 +226,11 @@ namespace {
             }
         }
 
-        bleManager.stopOBD2Polling();
+        if (protocol == domain::VehicleProtocol::CAN) {
+            bleManager.stopCANMonitor();
+        } else {
+            bleManager.stopOBD2Polling();
+        }
         std::cout << "\nDisconnecting...\n";
         bleManager.disconnect();
         std::cout << "Total signals received: " << signalCount << "\nGoodbye!\n";
@@ -278,7 +268,14 @@ int main(int argc, char* argv[]) {
         ? vehicle_sim::cli::DEFAULT_VEHICLE_TYPE
         : opts.vehicle_type;
 
-    if (!translationService.loadVehicle(vehicleType, vehicle_sim::domain::VehicleProtocol::OBD2)) {
+    // Determine protocol based on vehicle type
+    // tesla_model3 and audi_mlb_evo use CAN (DBC decoding), generic uses OBD2
+    vehicle_sim::domain::VehicleProtocol protocol = vehicle_sim::domain::VehicleProtocol::OBD2;
+    if (vehicleType == "tesla_model3" || vehicleType == "audi_mlb_evo") {
+        protocol = vehicle_sim::domain::VehicleProtocol::CAN;
+    }
+
+    if (!translationService.loadVehicle(vehicleType, protocol)) {
         std::cerr << "Failed to load vehicle config: " << vehicleType << "\n";
         return 1;
     }
@@ -295,7 +292,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (opts.connect_mode) {
-        return runConnect(*bleManager, translationService, opts.connect_address, activeConfig, opts.update_interval_ms);
+        return runConnect(*bleManager, translationService, opts.connect_address, activeConfig, opts.update_interval_ms, protocol);
     }
 
     vehicle_sim::cli::printHelp(std::cout, translationService.registry());

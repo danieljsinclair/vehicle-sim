@@ -16,6 +16,16 @@ struct ATCommand {
 };
 
 /**
+ * @brief CAN frame parsed from ELM327 monitor mode.
+ *
+ * Represents a raw CAN bus frame with ID and data payload.
+ */
+struct CANFrame {
+    uint16_t canId;
+    std::vector<uint8_t> data; // 8 bytes for standard CAN frames
+};
+
+/**
  * @brief ELM327 OBD2 transport layer.
  *
  * Handles ASCII encoding/decoding for ELM327-compatible adapters.
@@ -68,6 +78,32 @@ public:
      * @return Response without trailing prompt
      */
     static std::string extractPrompt(const std::string& response);
+
+    /**
+     * @brief Build CAN monitor mode initialization sequence.
+     * Configures ELM327 for raw CAN monitoring (Tesla uses this).
+     * @return Sequence of AT commands with timing requirements:
+     *         ATZ, ATE0, ATSP6 (ISO 15765-4 CAN 500kbps), ATH1 (headers on), ATMA (monitor all)
+     */
+    static std::vector<ATCommand> buildCANMonitorInitSequence();
+
+    /**
+     * @brief Build CAN filter command for specific CAN ID.
+     * @param canId The CAN ID to filter for (11-bit)
+     * @return ATCRA command string (e.g., "ATCRA264\r")
+     */
+    static std::string buildCANFilter(uint16_t canId);
+
+    /**
+     * @brief Parse CAN frame from ELM327 monitor mode output.
+     * ELM327 in monitor mode with headers outputs lines like:
+     *   "610 264 00 00 00 90 01 10 27 00" (with type prefix)
+     *   "264 00 00 00 90 01 10 27 00" (without type prefix)
+     * Where the first hex is the CAN ID followed by 8 data bytes.
+     * @param line ASCII line from ELM327
+     * @return Parsed CAN frame, or nullopt if not a valid CAN frame
+     */
+    static std::optional<CANFrame> parseCANFrame(const std::string& line);
 };
 
 } // namespace vehicle_sim::boundary

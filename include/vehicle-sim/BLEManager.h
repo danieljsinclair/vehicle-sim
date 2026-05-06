@@ -81,6 +81,15 @@ public:
     // Stop OBD2 PID polling
     void stopOBD2Polling();
 
+    // Initialize ELM327 for CAN monitor mode
+    bool initializeCANMonitor();
+
+    // Start CAN monitor mode (no polling thread needed)
+    void startCANMonitor(int interval_ms = 200);
+
+    // Stop CAN monitor mode
+    void stopCANMonitor();
+
 private:
     std::unique_ptr<BLEManagerBase> platform_;
     DeviceCallback device_callback_;

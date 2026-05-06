@@ -28,9 +28,25 @@ CliOptions parseArgs(int argc, char* argv[]) {
         ->capture_default_str()
         ->check(CLI::PositiveNumber);
 
-    app.callback([&opts]() {
+    // Combine all post-parsing logic in final_callback
+    app.final_callback([&opts]() {
+        // Set connect_mode based on connect_address
         if (!opts.connect_address.empty()) {
             opts.connect_mode = true;
+        }
+
+        // --vehicle is required for --connect
+        if (opts.connect_mode && opts.vehicle_type.empty()) {
+            throw CLI::ValidationError("Vehicle type required with --connect. Supported: tesla_model3, audi_mlb_evo, generic");
+        }
+
+        // Validate vehicle type if specified
+        if (!opts.vehicle_type.empty()) {
+            const std::vector<std::string> supported = {"tesla_model3", "audi_mlb_evo", "generic"};
+            bool isValid = std::find(supported.begin(), supported.end(), opts.vehicle_type) != supported.end();
+            if (!isValid) {
+                throw CLI::ValidationError("Unsupported vehicle type '" + opts.vehicle_type + "'. Supported: tesla_model3, audi_mlb_evo, generic");
+            }
         }
     });
 
@@ -52,7 +68,7 @@ void printHelp(std::ostream& out, const domain::VehicleConfigRegistry& registry)
         << "OPTIONS:\n"
         << "  --scan              Scan for BLE OBD2 adapters\n"
         << "  --connect <addr>    Connect to specific BLE adapter address\n"
-        << "  --vehicle <type>    Force vehicle type (auto-detected if omitted)\n"
+        << "  --vehicle <type>    Vehicle type (required with --connect)\n"
         << "  --list              List supported signals for each vehicle\n"
         << "  --format <fmt>      Output format: json, csv, or plain (default: plain)\n"
         << "  --interval <ms>     Update interval in milliseconds (default: 500)\n"
@@ -61,7 +77,7 @@ void printHelp(std::ostream& out, const domain::VehicleConfigRegistry& registry)
 
     auto vehicles = registry.getRegisteredVehicles();
     if (!vehicles.empty()) {
-        out << "SUPPORTED VEHICLES (auto-detected on connect):\n";
+        out << "SUPPORTED VEHICLES:\n";
         for (const auto& id : vehicles) {
             const auto* cfg = registry.getConfig(id);
             if (cfg) {
@@ -74,11 +90,15 @@ void printHelp(std::ostream& out, const domain::VehicleConfigRegistry& registry)
     out << "EXAMPLES:\n"
         << "  vehicle-sim --simulate\n"
         << "  vehicle-sim --scan\n"
-        << "  vehicle-sim --connect <addr>                         # auto-detect\n"
-        << "  vehicle-sim --connect <addr> --vehicle tesla_model3  # force Tesla\n\n"
+        << "  vehicle-sim --connect <addr> --vehicle tesla_model3\n"
+        << "  vehicle-sim --connect <addr> --vehicle audi_mlb_evo\n"
+        << "  vehicle-sim --connect <addr> --vehicle generic\n\n"
+        << "NOTES:\n"
+        << "  --vehicle is required when using --connect\n"
+        << "  tesla_model3 and audi_mlb_evo use CAN monitor mode (DBC decoding)\n"
+        << "  generic uses standard OBD2 PID polling\n\n"
         << "REQUIREMENTS:\n"
-        << "  For real data: Connect a BLE OBD2 adapter to your vehicle's OBD-II port.\n"
-        << "  Vehicle type is auto-detected via VIN query. Use --vehicle to override.\n";
+        << "  For real data: Connect a BLE OBD2 adapter to your vehicle's OBD-II port.\n";
 }
 
 void printSupportedSignals(std::ostream& out, const domain::VehicleConfigRegistry& registry) {

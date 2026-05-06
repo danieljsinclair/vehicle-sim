@@ -22,8 +22,56 @@ struct TelemetryCardView: View {
             }
         }
         .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.systemGray6))
         .cornerRadius(12)
+    }
+}
+
+private struct ConnectingDotsView: View {
+    @State private var dotCount = 0
+    private let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        Text(String(repeating: ".", count: dotCount))
+            .foregroundColor(.orange)
+            .onReceive(timer) { _ in
+                dotCount = (dotCount % 3) + 1
+            }
+    }
+}
+
+private struct DeviceRowView: View {
+    let device: VehicleViewModel.DeviceEntry
+    let action: () -> Void
+    @State private var pressed = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(device.name)
+                        .foregroundColor(.primary)
+                    Text(device.address)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Text("RSSI: \(device.rssi)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressableRowStyle())
+    }
+}
+
+private struct PressableRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(configuration.isPressed ? Color(.systemGray5) : Color.clear)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
@@ -33,60 +81,165 @@ struct ContentView: View {
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text("Connection")) {
-                    HStack {
-                        Text("Status")
-                        Spacer()
-                        Text(viewModel.connectionStatus)
-                            .foregroundColor(viewModel.isConnected ? .green : .red)
+                // MARK: - Vehicle Selection
+                Section(header: Text("Vehicle")) {
+                    Picker("Vehicle Type", selection: $viewModel.selectedVehicle) {
+                        ForEach(viewModel.vehicleOptions, id: \.0) { option in
+                            Text(option.1).tag(option.0)
+                        }
                     }
-                    Text(viewModel.isConnected ? "Showing demo data" : "Tap Start for demo")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    .pickerStyle(.segmented)
+                    .disabled(viewModel.isDemoMode)
+                    .onChange(of: viewModel.selectedVehicle) { newValue in
+                        if viewModel.isConnected {
+                            viewModel.switchVehicleType(newValue)
+                        }
+                    }
                 }
 
+                // MARK: - Connection
+                Section(header: Text("Connection")) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 0) {
+                                Text(viewModel.connectionStatus)
+                                    .foregroundColor(viewModel.isConnected || viewModel.isDemoMode ? .green : viewModel.isConnecting ? .orange : .red)
+                                if viewModel.isConnecting {
+                                    ConnectingDotsView()
+                                }
+                            }
+                            if let deviceName = viewModel.connectedDeviceName {
+                                Text(deviceName)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            if let deviceAddress = viewModel.connectedDeviceAddress {
+                                Text(deviceAddress)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        Spacer()
+                    }
+
+                    if !viewModel.isConnected && !viewModel.isDemoMode && !viewModel.isConnecting {
+                        Button(action: { viewModel.scanForDevices() }) {
+                            HStack {
+                                if viewModel.isScanning {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                    Text("Scanning...")
+                                } else {
+                                    Text("Scan for BLE Adapters")
+                                }
+                            }
+                        }
+                        .disabled(viewModel.isScanning)
+
+                        Button("Start Demo Mode") {
+                            viewModel.startDemo()
+                        }
+                        .foregroundColor(.blue)
+                    }
+
+                    if viewModel.isDemoMode {
+                        Button("Stop Demo") {
+                            viewModel.stopDemo()
+                        }
+                        .foregroundColor(.red)
+                    }
+
+                    if viewModel.isConnected {
+                        Button("Disconnect") {
+                            viewModel.disconnect()
+                        }
+                        .foregroundColor(.red)
+                    }
+                }
+
+                // MARK: - Discovered Devices
+                if !viewModel.discoveredDevices.isEmpty && !viewModel.isConnected && !viewModel.isConnecting {
+                    Section(header: Text("Discovered Devices")) {
+                        ForEach(viewModel.discoveredDevices) { device in
+                            Button(action: { viewModel.connectToDevice(device) }) {
+                                HStack {
+                                    VStack(alignment: .leading) {
+                                        Text(device.name)
+                                            .foregroundColor(.primary)
+                                        Text(device.address)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                    Text("RSSI: \(device.rssi)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // MARK: - Telemetry
                 Section(header: Text("Vehicle Telemetry")) {
-                    TelemetryCardView(
-                        title: "Throttle",
-                        value: String(format: "%.1f%%", viewModel.throttlePercent),
-                        unit: "",
-                        color: .blue
-                    )
-                    TelemetryCardView(
-                        title: "Speed",
-                        value: String(format: "%.1f", viewModel.speed),
-                        unit: "km/h",
-                        color: .green
-                    )
-                    TelemetryCardView(
-                        title: "Acceleration",
-                        value: String(format: "%.2f", viewModel.acceleration),
-                        unit: "g",
-                        color: .red
-                    )
-                    TelemetryCardView(
-                        title: "Brake",
-                        value: String(format: "%.1f%%", viewModel.brakePercent),
-                        unit: "",
-                        color: .yellow
-                    )
+                    LazyVGrid(columns: [
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: 12) {
+                        TelemetryCardView(
+                            title: "Speed",
+                            value: String(format: "%.1f", viewModel.speed),
+                            unit: "km/h",
+                            color: .green
+                        )
+
+                        TelemetryCardView(
+                            title: "Throttle",
+                            value: String(format: "%.1f%%", viewModel.throttlePercent),
+                            unit: "",
+                            color: .blue
+                        )
+
+                        if viewModel.isTeslaSelected {
+                            TelemetryCardView(
+                                title: "Motor RPM",
+                                value: String(format: "%.0f", viewModel.motorRpm),
+                                unit: "rpm",
+                                color: .orange
+                            )
+
+                            TelemetryCardView(
+                                title: "Torque",
+                                value: String(format: "%.1f", viewModel.motorTorqueNm),
+                                unit: "Nm",
+                                color: .purple
+                            )
+
+                            TelemetryCardView(
+                                title: "Steering",
+                                value: String(format: "%.1f", viewModel.steeringAngleDeg),
+                                unit: "deg",
+                                color: .cyan
+                            )
+                        }
+
+                        TelemetryCardView(
+                            title: "Acceleration",
+                            value: String(format: "%.2f", viewModel.acceleration),
+                            unit: "g",
+                            color: .red
+                        )
+
+                        TelemetryCardView(
+                            title: "Brake",
+                            value: String(format: "%.1f%%", viewModel.brakePercent),
+                            unit: "",
+                            color: .yellow
+                        )
+                    }
                 }
             }
             .navigationTitle("Vehicle Telemetry")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {
-                        if viewModel.isConnected {
-                            viewModel.stop()
-                        } else {
-                            viewModel.start()
-                        }
-                    }) {
-                        Text(viewModel.isConnected ? "Stop" : "Start")
-                            .foregroundColor(viewModel.isConnected ? .red : .green)
-                    }
-                }
-            }
         }
     }
 }

@@ -12,6 +12,7 @@
 
 #include "vehicle-sim/ble/BLEDeviceInfo.h"
 #include "vehicle-sim/boundary/OBD2Protocol.h"
+#include "vehicle-sim/boundary/ELM327Transport.h"
 #include "vehicle-sim/domain/VehicleDetector.h"
 
 namespace vehicle_sim {
@@ -57,14 +58,17 @@ struct OBD2PIDs {
 
 /**
  * @brief Parsed OBD2 response containing a telemetry value.
+ * @deprecated This struct is kept for backward compatibility.
+ *            OBD2 parsing should use ELM327Transport and OBD2Protocol instead.
  */
 struct OBD2Response {
-    uint8_t mode;           // Response mode (usually 0x41 for Mode 01 response)
-    uint8_t pid;            // PID that was queried
-    std::vector<uint8_t> data;  // Raw data bytes
-    std::optional<double> value; // Parsed numeric value (if parseable)
+    uint8_t mode = 0;
+    uint8_t pid = 0;
+    std::vector<uint8_t> data;
+    std::optional<double> value;
     bool valid = false;
 };
+
 
 /**
  * @brief Shared BLE functionality for both macOS and iOS.
@@ -150,40 +154,9 @@ public:
     // ================================================
 
     /**
-     * Build an OBD2 PID query command.
-     * @param pid The PID to query (e.g., 0x11 for throttle)
-     * @return Complete OBD2 command bytes
-     */
-    std::vector<uint8_t> buildOBD2Query(uint8_t pid) const;
-
-    /**
-     * Build an OBD2 Mode 01 request (live data).
-     * @param pid The PID to request
-     * @return Complete command including terminator
-     */
-    std::vector<uint8_t> buildMode01Request(uint8_t pid) const;
-
-    /**
-     * Parse an OBD2 response and extract the numeric value.
-     * @param response Raw response bytes from device
-     * @return Parsed response structure with value
-     */
-    OBD2Response parseOBD2Response(const std::vector<uint8_t>& response) const;
-
-    /**
-     * Extract numeric value from response data bytes.
-     * Handles single-byte, double-byte, and bit-encoded values.
-     * @param data Data bytes from response
-     * @param pid The PID that was queried (affects parsing)
-     * @return Optional double value if parseable
-     */
-    std::optional<double> extractOBD2Value(const std::vector<uint8_t>& data, uint8_t pid) const;
-
-    /**
-     * Send an OBD2 PID query and return parsed response.
-     * Convenience method that combines buildOBD2Query + send + parseOBD2Response.
+     * Send an OBD2 PID query using ELM327 ASCII encoding.
      * @param pid The PID to query
-     * @return Parsed response with value
+     * @return Empty response - actual response comes via data callback
      */
     OBD2Response queryPID(uint8_t pid);
 
@@ -206,6 +179,26 @@ public:
      * Stop polling OBD2 PIDs.
      */
     void stopOBD2Polling();
+
+    /**
+     * Initialize ELM327 for CAN monitor mode.
+     * Sends CAN init sequence (ATZ, ATE0, ATSP6, ATH1, ATMA).
+     * @return true if initialization commands sent
+     */
+    bool initializeCANMonitor();
+
+    /**
+     * Start CAN monitor mode.
+     * In CAN mode, ELM327 continuously streams CAN frames after ATMA.
+     * No polling loop needed — data arrives via BLE notifications.
+     * @param interval_ms Unused for CAN mode (kept for API compatibility)
+     */
+    void startCANMonitor(int interval_ms = 200);
+
+    /**
+     * Stop CAN monitor mode.
+     */
+    void stopCANMonitor();
 
     /**
      * Initialize OBD2 protocol with auto-detection.
@@ -256,11 +249,8 @@ protected:
     static constexpr int TOTAL_PID_QUERY_TIME_MS = 250;      // 5 PIDs * 50ms
     static constexpr int POST_CONNECT_SETUP_DELAY_MS = 500;  // wait for characteristic notifications
 
-    // OBD2 protocol constants (math formulas live in OBD2Math.h)
+    // OBD2 protocol constants
     static constexpr uint8_t OBD2_MODE_LIVE_DATA = 0x01;    // Mode 01: Show Current Data
-    static constexpr std::size_t DATA_OFFSET = 2;             // skip mode + pid bytes
-    static constexpr uint8_t RESPONSE_MODE_MIN = 0x40;       // 0x40-0x4F = Mode 01-0F responses
-    static constexpr uint8_t RESPONSE_MODE_MAX = 0x4F;
 
     // RSSI signal quality thresholds (dBm)
     static constexpr int RSSI_EXCELLENT = -50;
@@ -274,6 +264,9 @@ protected:
 
     // OBD2 protocol handler for vehicle detection and command management
     boundary::OBD2Protocol obd2_protocol_;
+
+    // CAN monitor mode flag
+    std::atomic<bool> can_mode_{false};
 
     // ================================================
     // Protected Helper Methods for Derived Classes
@@ -319,17 +312,12 @@ protected:
      */
     std::optional<BLEDeviceInfo> findDeviceByAddress(const std::string& address) const;
 
-private:
     /**
-     * Validate OBD2 response format.
-     * Checks for proper header and length.
+     * Parse ASCII response from ELM327 adapter to binary OBD2 data.
+     * @param asciiData Raw ASCII bytes from BLE notification
+     * @return Binary OBD2 data, or empty if not a valid OBD2 response
      */
-    bool validateOBD2Response(const std::vector<uint8_t>& response) const;
-
-    /**
-     * Parse specific PID types to extract values.
-     */
-    double parseSpecificPID(uint8_t pid, const std::vector<uint8_t>& data) const;
+    std::vector<uint8_t> parseASCIIResponseToBinary(const std::vector<uint8_t>& asciiData);
 };
 
 } // namespace vehicle_sim

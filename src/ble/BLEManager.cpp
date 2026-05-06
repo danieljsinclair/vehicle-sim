@@ -122,6 +122,19 @@ void BLEManager::stopOBD2Polling() {
     }
 }
 
+bool BLEManager::initializeCANMonitor() {
+    if (platform_) return platform_->initializeCANMonitor();
+    return false;
+}
+
+void BLEManager::startCANMonitor(int interval_ms) {
+    if (platform_) platform_->startCANMonitor(interval_ms);
+}
+
+void BLEManager::stopCANMonitor() {
+    if (platform_) platform_->stopCANMonitor();
+}
+
 std::optional<domain::VehicleDetectionResult> BLEManager::initializeOBD2WithDetection() {
     return platform_ ? platform_->initializeOBD2WithDetection() : std::nullopt;
 }

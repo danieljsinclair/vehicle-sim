@@ -23,6 +23,7 @@ public:
     ~DBCTranslationService();
 
     bool loadVehicle(const std::string& vehicleId, VehicleProtocol protocol);
+    bool loadVehicleWithContent(const std::string& vehicleId, VehicleProtocol protocol, const std::string& dbcContent);
     [[nodiscard]] std::optional<VehicleSignal> processFrame(const std::vector<std::uint8_t>& rawData) const noexcept;
     [[nodiscard]] VehicleProtocol getProtocol() const noexcept;
     [[nodiscard]] std::string getVehicleId() const noexcept;

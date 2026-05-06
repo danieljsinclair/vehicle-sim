@@ -181,3 +181,70 @@ TEST_F(CliOptionsTest, MultipleFlagsCombined) {
     EXPECT_EQ(opts.update_interval_ms, 100);
     EXPECT_TRUE(opts.error_message.empty());
 }
+
+TEST_F(CliOptionsTest, ConnectWithoutVehicleReturnsError) {
+    Args args({"vehicle-sim", "--connect", "AA:BB:CC:DD:EE:FF"});
+    auto opts = parseArgs(args.argc(), args.argv());
+
+    EXPECT_TRUE(opts.connect_mode);
+    EXPECT_FALSE(opts.error_message.empty());
+    EXPECT_NE(opts.error_message.find("Vehicle type required"), std::string::npos);
+    EXPECT_NE(opts.error_message.find("--connect"), std::string::npos);
+}
+
+TEST_F(CliOptionsTest, ConnectWithInvalidVehicleReturnsError) {
+    Args args({"vehicle-sim", "--connect", "AA:BB:CC:DD:EE:FF", "--vehicle", "foobar"});
+    auto opts = parseArgs(args.argc(), args.argv());
+
+    EXPECT_TRUE(opts.connect_mode);
+    EXPECT_FALSE(opts.error_message.empty());
+    EXPECT_NE(opts.error_message.find("foobar"), std::string::npos);
+    EXPECT_NE(opts.error_message.find("tesla_model3"), std::string::npos);
+    EXPECT_NE(opts.error_message.find("audi_mlb_evo"), std::string::npos);
+    EXPECT_NE(opts.error_message.find("generic"), std::string::npos);
+}
+
+TEST_F(CliOptionsTest, ConnectWithValidTeslaVehicleNoError) {
+    Args args({"vehicle-sim", "--connect", "AA:BB:CC:DD:EE:FF", "--vehicle", "tesla_model3"});
+    auto opts = parseArgs(args.argc(), args.argv());
+
+    EXPECT_TRUE(opts.connect_mode);
+    EXPECT_EQ(opts.vehicle_type, "tesla_model3");
+    EXPECT_TRUE(opts.error_message.empty());
+}
+
+TEST_F(CliOptionsTest, ConnectWithValidAudiVehicleNoError) {
+    Args args({"vehicle-sim", "--connect", "AA:BB:CC:DD:EE:FF", "--vehicle", "audi_mlb_evo"});
+    auto opts = parseArgs(args.argc(), args.argv());
+
+    EXPECT_TRUE(opts.connect_mode);
+    EXPECT_EQ(opts.vehicle_type, "audi_mlb_evo");
+    EXPECT_TRUE(opts.error_message.empty());
+}
+
+TEST_F(CliOptionsTest, ConnectWithValidGenericVehicleNoError) {
+    Args args({"vehicle-sim", "--connect", "AA:BB:CC:DD:EE:FF", "--vehicle", "generic"});
+    auto opts = parseArgs(args.argc(), args.argv());
+
+    EXPECT_TRUE(opts.connect_mode);
+    EXPECT_EQ(opts.vehicle_type, "generic");
+    EXPECT_TRUE(opts.error_message.empty());
+}
+
+TEST_F(CliOptionsTest, SimulateWithoutVehicleNoErrorDefaultsToGeneric) {
+    Args args({"vehicle-sim", "--simulate"});
+    auto opts = parseArgs(args.argc(), args.argv());
+
+    EXPECT_TRUE(opts.simulate_mode);
+    EXPECT_TRUE(opts.vehicle_type.empty());
+    EXPECT_TRUE(opts.error_message.empty());
+}
+
+TEST_F(CliOptionsTest, ScanWithoutVehicleNoError) {
+    Args args({"vehicle-sim", "--scan"});
+    auto opts = parseArgs(args.argc(), args.argv());
+
+    EXPECT_TRUE(opts.scan_mode);
+    EXPECT_TRUE(opts.vehicle_type.empty());
+    EXPECT_TRUE(opts.error_message.empty());
+}

@@ -1,35 +1,54 @@
-/**
- * @brief Objective-C++ thin bridge between C++ VehicleSimulator and Swift UI.
- *
- * Zero simulation logic — delegates entirely to C++ VehicleSimulator.
- * Only exposes the 4 VehicleSignal fields: throttle, speed, acceleration, brake.
- *
- * Usage from Swift:
- *   let wrapper = VehicleSimWrapper()
- *   wrapper.start()
- *   let t = wrapper.throttlePercent
- */
-
 #import <Foundation/Foundation.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// BLE device information for Swift
+@interface VehicleSimDevice : NSObject
+@property (nonatomic, strong) NSString *name;
+@property (nonatomic, strong) NSString *address;
+@property (nonatomic, assign) int rssi;
+@end
+
 /// Objective-C++ wrapper for vehicle-sim C++ core
+/// Supports both demo simulation mode and live BLE data mode
 @interface VehicleSimWrapper : NSObject
 
-/// Initialize the simulator (creates C++ VehicleSimulator)
-- (instancetype)init;
+// MARK: - Demo Mode
 
-/// Start simulation
-- (void)start;
+/// Start demo simulation
+- (void)startDemo;
 
-/// Stop simulation
-- (void)stop;
+/// Stop demo simulation
+- (void)stopDemo;
 
-/// Advance simulation by one tick and update signal values
-- (void)update;
+// MARK: - BLE Live Mode
 
-/// Latest signal values from C++ VehicleSignal (0.0 - 100.0)
+/// Scan for BLE devices
+/// @param timeout Duration to scan in seconds
+/// @return Array of discovered devices
+- (NSArray<VehicleSimDevice*> *)scanForDevices:(NSTimeInterval)timeout;
+
+/// Connect to a BLE device
+/// @param address Device address to connect to
+/// @param deviceName Display name of the BLE device
+/// @param vehicleType Vehicle type (e.g., "tesla_model3", "audi_mlb_evo", "generic")
+/// @return YES if connection initiated successfully
+- (BOOL)connectToDevice:(NSString *)address deviceName:(NSString *)deviceName vehicleType:(NSString *)vehicleType;
+
+/// Disconnect from current BLE device
+- (void)disconnect;
+
+/// Switch vehicle interpreter while connected
+/// @param vehicleType New vehicle type (e.g., "tesla_model3", "audi_mlb_evo", "generic")
+/// @return YES if switch succeeded
+- (BOOL)switchVehicleType:(NSString *)vehicleType;
+
+/// Advance demo simulation by one tick
+- (void)updateSimulator;
+
+// MARK: - Signal Values
+
+/// Latest throttle percent (0.0 - 100.0)
 @property (nonatomic, readonly) double throttlePercent;
 
 /// Latest speed in km/h (0.0 - 300.0)
@@ -41,8 +60,31 @@ NS_ASSUME_NONNULL_BEGIN
 /// Latest brake percent (0.0 - 100.0)
 @property (nonatomic, readonly) double brakePercent;
 
-/// Check if simulator is running
-- (BOOL)isRunning;
+/// Latest motor RPM (0.0 - 20000.0)
+@property (nonatomic, readonly) double motorRpm;
+
+/// Latest motor torque in Nm (-7500.0 to +7500.0)
+@property (nonatomic, readonly) double motorTorqueNm;
+
+/// Latest steering angle in degrees (-819.2 to +819.2)
+@property (nonatomic, readonly) double steeringAngleDeg;
+
+// MARK: - State
+
+/// YES if connected to BLE device
+@property (nonatomic, readonly) BOOL isConnected;
+
+/// YES if demo mode is active
+@property (nonatomic, readonly) BOOL isDemoMode;
+
+/// YES if BLE is ready for connections
+@property (nonatomic, readonly) BOOL isBluetoothReady;
+
+/// Name of the connected BLE adapter
+@property (nonatomic, readonly, nullable) NSString *connectedDeviceName;
+
+/// Address of the connected BLE adapter
+@property (nonatomic, readonly, nullable) NSString *connectedDeviceAddress;
 
 @end
 

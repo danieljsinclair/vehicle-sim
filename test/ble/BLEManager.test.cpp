@@ -190,7 +190,7 @@ TEST(BLEManagerTest, HandlesNullPlatformGracefully)
 // BLEManagerBase OBD2 Helper Tests
 // ================================================
 
-TEST(BLEManagerBaseTest, BuildsOBD2QueryCorrectly)
+TEST(BLEManagerBaseTest, ParsesASCIIResponseToBinary)
 {
     // Create a concrete test subclass since BLEManagerBase is abstract
     class TestBLEManager : public BLEManagerBase {
@@ -201,24 +201,28 @@ TEST(BLEManagerBaseTest, BuildsOBD2QueryCorrectly)
         void send(const std::vector<uint8_t>&) override {}
         bool isConnected() const override { return false; }
         std::string getConnectedDeviceId() const override { return {}; }
+
+        // Expose private method for testing
+        std::vector<uint8_t> testParseASCIIResponseToBinary(const std::vector<uint8_t>& asciiData) {
+            return parseASCIIResponseToBinary(asciiData);
+        }
     };
 
     TestBLEManager manager;
 
-    // Test throttle position query (PID 0x11)
-    auto cmd = manager.buildOBD2Query(0x11);
-    EXPECT_EQ(cmd.size(), 2);
-    EXPECT_EQ(cmd[0], 0x01);  // Mode 01
-    EXPECT_EQ(cmd[1], 0x11);  // Throttle PID
+    // Simulate ASCII hex response from ELM327: "41 0C 1A F8\r"
+    std::vector<uint8_t> asciiData = {'4', '1', ' ', '0', 'C', ' ', '1', 'A', ' ', 'F', '8', '\r'};
+    auto result = manager.testParseASCIIResponseToBinary(asciiData);
 
-    // Test vehicle speed query (PID 0x0D)
-    auto cmd2 = manager.buildOBD2Query(0x0D);
-    EXPECT_EQ(cmd2.size(), 2);
-    EXPECT_EQ(cmd2[0], 0x01);
-    EXPECT_EQ(cmd2[1], 0x0D);
+    // Should parse to binary [0x41, 0x0C, 0x1A, 0xF8]
+    EXPECT_EQ(result.size(), 4);
+    EXPECT_EQ(result[0], 0x41);
+    EXPECT_EQ(result[1], 0x0C);
+    EXPECT_EQ(result[2], 0x1A);
+    EXPECT_EQ(result[3], 0xF8);
 }
 
-TEST(BLEManagerBaseTest, ParsesOBD2ThrottleResponse)
+TEST(BLEManagerBaseTest, SkipsPromptAndEcho)
 {
     class TestBLEManager : public BLEManagerBase {
     public:
@@ -228,42 +232,54 @@ TEST(BLEManagerBaseTest, ParsesOBD2ThrottleResponse)
         void send(const std::vector<uint8_t>&) override {}
         bool isConnected() const override { return false; }
         std::string getConnectedDeviceId() const override { return {}; }
+
+        std::vector<uint8_t> testParseASCIIResponseToBinary(const std::vector<uint8_t>& asciiData) {
+            return parseASCIIResponseToBinary(asciiData);
+        }
     };
 
     TestBLEManager manager;
 
-    // Simulate OBD2 response: Mode 0x41, PID 0x11, Data 0x80 (50% throttle)
-    std::vector<uint8_t> response = {0x41, 0x11, 0x80};
+    // ELM327 prompt character only
+    std::vector<uint8_t> prompt = {'>'};
+    auto result = manager.testParseASCIIResponseToBinary(prompt);
+    EXPECT_TRUE(result.empty());
 
-    auto result = manager.parseOBD2Response(response);
-    EXPECT_TRUE(result.valid);
-    EXPECT_EQ(result.pid, 0x11);
-    EXPECT_TRUE(result.value.has_value());
-    EXPECT_NEAR(*result.value, 50.0, 1.0);  // ~50% throttle
+    // Error message
+    std::vector<uint8_t> error = {'N', 'O', ' ', 'D', 'A', 'T', 'A', '\r'};
+    result = manager.testParseASCIIResponseToBinary(error);
+    EXPECT_TRUE(result.empty());
 }
 
-TEST(BLEManagerBaseTest, ParsesOBD2SpeedResponse)
+TEST(BLEManagerBaseTest, BuildsAndSendsOBD2QueryWithELM327Encoding)
 {
     class TestBLEManager : public BLEManagerBase {
     public:
         std::vector<BLEDeviceInfo> scanForDevices(int) override { return {}; }
         bool connect(const std::string&) override { return false; }
         void disconnect() override {}
-        void send(const std::vector<uint8_t>&) override {}
+        std::vector<uint8_t> lastSent;
+
+        void send(const std::vector<uint8_t>& data) override {
+            lastSent = data;
+        }
+
         bool isConnected() const override { return false; }
         std::string getConnectedDeviceId() const override { return {}; }
     };
 
     TestBLEManager manager;
 
-    // Simulate OBD2 response: Mode 0x41, PID 0x0D, Data 0x50 (80 km/h)
-    std::vector<uint8_t> response = {0x41, 0x0D, 0x50};
+    // Query PID 0x0C (Engine RPM)
+    manager.queryPID(0x0C);
 
-    auto result = manager.parseOBD2Response(response);
-    EXPECT_TRUE(result.valid);
-    EXPECT_EQ(result.pid, 0x0D);
-    EXPECT_TRUE(result.value.has_value());
-    EXPECT_EQ(*result.value, 80.0);  // 80 km/h
+    // Should send ASCII "01 0C\r" as bytes
+    std::string expected = "01 0C\r";
+    EXPECT_EQ(manager.lastSent.size(), expected.size());
+
+    for (size_t i = 0; i < expected.size(); ++i) {
+        EXPECT_EQ(manager.lastSent[i], static_cast<uint8_t>(expected[i]));
+    }
 }
 
 TEST(BLEManagerBaseTest, SignalQualityConversion)

@@ -34,10 +34,14 @@ add_executable(vehicle-sim-tests
     boundary/TeslaBLETransport.test.cpp
     boundary/OBD2Transport.test.cpp
     boundary/ELM327Protocol.test.cpp
+    boundary/ELM327Transport.test.cpp
     boundary/OBD2EndToEnd.test.cpp
     boundary/VehicleDetectorIntegration.test.cpp
     integration/EventDispatcherIntegration.test.cpp
     integration/DBCPipelineIntegration.test.cpp
+    integration/DBCLiveDecoding.test.cpp
+    integration/TeslaCANLiveDecoding.test.cpp
+    integration/AudiOBD2LiveDecoding.test.cpp
 )
 
 target_link_libraries(vehicle-sim-tests

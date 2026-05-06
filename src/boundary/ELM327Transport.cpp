@@ -205,4 +205,127 @@ std::string ELM327Transport::extractPrompt(const std::string& response) {
     return response;
 }
 
+// ================================================
+// CAN Monitor Mode Support
+// ================================================
+
+std::vector<ATCommand> ELM327Transport::buildCANMonitorInitSequence() {
+    return {
+        {"ATZ\r", 500},     // Full reset - needs long delay
+        {"ATE0\r", 50},    // Echo off
+        {"ATSP6\r", 50},   // ISO 15765-4 CAN 500kbps 11-bit (Tesla)
+        {"ATH1\r", 50},    // Headers on (need CAN ID in response)
+        {"ATMA\r", 50}     // Monitor all CAN frames
+    };
+}
+
+std::string ELM327Transport::buildCANFilter(uint16_t canId) {
+    char buffer[32];
+    snprintf(buffer, sizeof(buffer), "ATCRA%X\r", canId);
+    return std::string(buffer);
+}
+
+std::optional<CANFrame> ELM327Transport::parseCANFrame(const std::string& line) {
+    if (line.empty()) {
+        return std::nullopt;
+    }
+
+    // Remove trailing line endings
+    std::string cleaned = line;
+    while (!cleaned.empty() && (cleaned.back() == '\r' || cleaned.back() == '\n')) {
+        cleaned.pop_back();
+    }
+
+    // Check for prompt only
+    if (cleaned == ">") {
+        return std::nullopt;
+    }
+
+    // Check for ELM327 responses (not CAN frames)
+    std::string upper = cleaned;
+    std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
+    if (upper == "OK" || upper == "NO DATA" || upper == "ERROR" || upper == "STOPPED" ||
+        upper == "UNABLE TO CONNECT" || upper == "BUS ERROR" || upper == "BUFFER FULL" ||
+        upper == "CAN ERROR" || upper == "BUS INIT" || upper == "SEARCHING") {
+        return std::nullopt;
+    }
+
+    // Check for OBD2 multi-frame response with line numbers (e.g., "014:")
+    if (cleaned.find(':') != std::string::npos) {
+        return std::nullopt;
+    }
+
+    // Check for OBD2 response format (starts with 0x41 which is mode 01 response)
+    // A valid CAN frame should have more hex bytes than a typical OBD2 response
+    std::vector<std::string> tokens;
+    std::string current;
+    for (char c : cleaned) {
+        if (std::isxdigit(c)) {
+            current += static_cast<char>(std::toupper(c));
+        } else if (!current.empty()) {
+            tokens.push_back(current);
+            current.clear();
+        }
+    }
+    if (!current.empty()) {
+        tokens.push_back(current);
+    }
+
+    // Need at least CAN ID + 8 data bytes (9 tokens minimum)
+    // Or CAN ID + type byte + 8 data bytes (10 tokens with type prefix)
+    if (tokens.size() < 9 || tokens.size() > 10) {
+        // Could be an OBD2 response with fewer bytes
+        return std::nullopt;
+    }
+
+    size_t dataStart = 0;
+    uint16_t canId = 0;
+
+    // Check if first token is a type byte (0x600-0x6FF range)
+    if (tokens.size() == 10) {
+        unsigned int type;
+        if (sscanf(tokens[0].c_str(), "%X", &type) != 1) {
+            return std::nullopt;
+        }
+        // Type byte in range 0x600-0x6FF indicates monitor mode type prefix
+        if (type >= 0x600 && type <= 0x6FF) {
+            dataStart = 1;
+        } else {
+            // Not a valid type prefix, might be malformed
+            return std::nullopt;
+        }
+    }
+
+    // Parse CAN ID (first token after optional type)
+    unsigned int id;
+    if (sscanf(tokens[dataStart].c_str(), "%X", &id) != 1) {
+        return std::nullopt;
+    }
+    canId = static_cast<uint16_t>(id);
+
+    // Verify we have exactly 8 data bytes remaining
+    size_t dataCount = tokens.size() - dataStart - 1;
+    if (dataCount != 8) {
+        return std::nullopt;
+    }
+
+    // Parse data bytes
+    std::vector<uint8_t> data;
+    for (size_t i = dataStart + 1; i < tokens.size(); ++i) {
+        if (tokens[i].size() != 2) {
+            return std::nullopt;
+        }
+        auto byte = parseHexByte(tokens[i]);
+        if (!byte) {
+            return std::nullopt;
+        }
+        data.push_back(*byte);
+    }
+
+    CANFrame frame;
+    frame.canId = canId;
+    frame.data = std::move(data);
+    return frame;
+}
+
 } // namespace vehicle_sim::boundary

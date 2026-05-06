@@ -1,17 +1,9 @@
 #include "vehicle-sim/ble/BLEManagerBase.h"
-#include "vehicle-sim/domain/OBD2Math.h"
 #include "vehicle-sim/boundary/OBD2Protocol.h"
-
-using vehicle_sim::domain::obd2BytePercent;
-using vehicle_sim::domain::obd2RawValue;
-using vehicle_sim::domain::obd2WordRPM;
-using vehicle_sim::domain::obd2TempCelsius;
+#include "vehicle-sim/boundary/ELM327Transport.h"
 
 #include <iostream>
-#include <sstream>
-#include <iomanip>
 #include <algorithm>
-#include <cmath>
 #include <thread>
 #include <chrono>
 
@@ -49,147 +41,30 @@ void BLEManagerBase::setConnectionCallback(ConnectionCallback callback) {
 // OBD2 Command Building
 // ================================================
 
-std::vector<uint8_t> BLEManagerBase::buildOBD2Query(uint8_t pid) const {
-    // Standard OBD2 query format: [Mode] [PID] [Terminator]
-    // Mode 01 = Show Live Data
-    std::vector<uint8_t> cmd = {OBD2_MODE_LIVE_DATA, pid};
-    // Many adapters expect carriage return terminator
-    return cmd;
-}
-
-std::vector<uint8_t> BLEManagerBase::buildMode01Request(uint8_t pid) const {
-    // Mode 01 request - standard OBD2 live data query
-    // Format: "01 PID\r" as ASCII for most ELM327 adapters
-    std::vector<uint8_t> cmd;
-    cmd.push_back(OBD2_MODE_LIVE_DATA);  // Mode 01: Show Current Data
-    cmd.push_back(pid);   // PID code
-
-    // Some adapters also accept ASCII format - but we use binary for CoreBluetooth
-    // The terminating CR will be handled by the write operation
-
-    return cmd;
-}
-
-// ================================================
-// OBD2 Response Parsing
-// ================================================
-
-OBD2Response BLEManagerBase::parseOBD2Response(const std::vector<uint8_t>& response) const {
-    OBD2Response result;
-
-    if (!validateOBD2Response(response)) {
-        std::cerr << "[BLEManagerBase] Invalid OBD2 response format" << std::endl;
-        return result;
-    }
-
-    result.mode = response[0];
-    result.pid = response[1];
-
-    // Data starts at byte 2 (mode + pid + maybe length byte)
-    size_t data_start = DATA_OFFSET;
-    if (response.size() > DATA_OFFSET && response[DATA_OFFSET] <= RESPONSE_MODE_MIN) {
-        // Some responses have a length byte
-        data_start = DATA_OFFSET + 1;
-    }
-
-    // Copy data bytes
-    if (data_start < response.size()) {
-        result.data.assign(response.begin() + data_start, response.end());
-    }
-
-    // Extract numeric value
-    result.value = extractOBD2Value(result.data, result.pid);
-    result.valid = result.value.has_value();
-
-    if (result.valid) {
-        std::cout << "[BLEManagerBase] Parsed PID 0x"
-                  << std::hex << (int)result.pid << std::dec
-                  << " = " << *result.value << std::endl;
-    }
-
-    return result;
-}
-
-std::optional<double> BLEManagerBase::extractOBD2Value(const std::vector<uint8_t>& data, uint8_t pid) const {
-    if (data.empty()) {
-        return std::nullopt;
-    }
-
-    try {
-        return parseSpecificPID(pid, data);
-    } catch (const std::exception& e) {
-        std::cerr << "[BLEManagerBase] Error parsing PID 0x"
-                  << std::hex << (int)pid << std::dec
-                  << ": " << e.what() << std::endl;
-        return std::nullopt;
-    }
-}
-
-double BLEManagerBase::parseSpecificPID(uint8_t pid, const std::vector<uint8_t>& data) const {
-    switch (pid) {
-        case OBD2PIDs::THROTTLE_POSITION:
-            return obd2BytePercent(data[0]);
-
-        case OBD2PIDs::VEHICLE_SPEED:
-            return obd2RawValue(data[0]);
-
-        case OBD2PIDs::ENGINE_RPM:
-            if (data.size() >= 2) {
-                return obd2WordRPM(data[0], data[1]);
-            }
-            return obd2RawValue(data[0]);
-
-        case OBD2PIDs::COOLANT_TEMP:
-            return obd2TempCelsius(data[0]);
-
-        case OBD2PIDs::INTAKE_AIR_TEMP:
-            return obd2TempCelsius(data[0]);
-
-        case OBD2PIDs::ENGINE_LOAD:
-            return obd2BytePercent(data[0]);
-
-        case OBD2PIDs::FUEL_LEVEL:
-            return obd2BytePercent(data[0]);
-
-        case OBD2PIDs::ACCELERATOR_POSITION_D:
-            return obd2BytePercent(data[0]);
-
-        case OBD2PIDs::ACCELERATOR_POSITION_P:
-            return obd2BytePercent(data[0]);
-
-        default:
-            if (!data.empty()) {
-                return obd2RawValue(data[0]);
-            }
-            return 0.0;
-    }
-}
-
-bool BLEManagerBase::validateOBD2Response(const std::vector<uint8_t>& response) const {
-    // Minimum response: mode + pid + at least one data byte
-    if (response.size() < DATA_OFFSET + 1) {
-        return false;
-    }
-
-    // Mode 0x41 = Response to Mode 0x01 (Show Current Data)
-    // Mode 0x4X would be response to other modes
-    if (response[0] < RESPONSE_MODE_MIN || response[0] > RESPONSE_MODE_MAX) {
-        // Not a standard OBD2 response mode
-        // Could be an error code or non-standard response
-        std::cerr << "[BLEManagerBase] Unusual response mode: 0x"
-                  << std::hex << (int)response[0] << std::dec << std::endl;
-    }
-
-    return true;
-}
-
 OBD2Response BLEManagerBase::queryPID(uint8_t pid) {
-    auto cmd = buildOBD2Query(pid);
-    send(cmd);
+    // Use ELM327Transport to build ASCII command
+    std::string cmd = boundary::ELM327Transport::buildOBD2Query(OBD2_MODE_LIVE_DATA, pid);
+    // Convert ASCII string to bytes for BLE send
+    std::vector<uint8_t> bytes(cmd.begin(), cmd.end());
+    send(bytes);
 
     // The actual response will come via the data callback
-    // This is a synchronous convenience - subclasses may override
     return OBD2Response{};  // Return empty - response comes async
+}
+
+std::vector<uint8_t> BLEManagerBase::parseASCIIResponseToBinary(const std::vector<uint8_t>& asciiData) {
+    // Convert bytes to string (ELM327 sends ASCII text)
+    std::string response(asciiData.begin(), asciiData.end());
+
+    // Use ELM327Transport to parse ASCII hex to binary
+    auto binaryData = boundary::ELM327Transport::parseOBD2Response(response);
+
+    if (binaryData) {
+        return *binaryData;
+    }
+
+    // Not a valid OBD2 response - could be prompt, echo, or error
+    return {};
 }
 
 bool BLEManagerBase::initializeELM327() {
@@ -304,6 +179,38 @@ void BLEManagerBase::stopOBD2Polling() {
     }
 }
 
+bool BLEManagerBase::initializeCANMonitor() {
+    std::cout << "[BLEManagerBase] Initializing ELM327 for CAN monitor mode..." << std::endl;
+
+    auto commands = boundary::ELM327Transport::buildCANMonitorInitSequence();
+    for (const auto& cmd : commands) {
+        std::vector<uint8_t> bytes(cmd.command.begin(), cmd.command.end());
+        send(bytes);
+        std::this_thread::sleep_for(std::chrono::milliseconds(cmd.delayMs));
+    }
+
+    can_mode_ = true;
+    std::cout << "[BLEManagerBase] CAN monitor mode initialized" << std::endl;
+    return true;
+}
+
+void BLEManagerBase::startCANMonitor(int interval_ms) {
+    // CAN monitor mode doesn't need a polling thread.
+    // ELM327 streams CAN frames continuously after ATMA command.
+    // Data arrives via BLE notifications → invokeDataCallback() → CAN frame parsing.
+    can_mode_ = true;
+    std::cout << "[BLEManagerBase] CAN monitor mode active - receiving frames via BLE notifications" << std::endl;
+}
+
+void BLEManagerBase::stopCANMonitor() {
+    can_mode_ = false;
+    // Send stop monitoring command
+    std::string stopCmd = "ATMA\r";
+    std::vector<uint8_t> bytes(stopCmd.begin(), stopCmd.end());
+    send(bytes);
+    std::cout << "[BLEManagerBase] CAN monitor mode stopped" << std::endl;
+}
+
 // ================================================
 // Device Management (Common Implementation)
 // ================================================
@@ -354,8 +261,30 @@ void BLEManagerBase::invokeDeviceCallback(const BLEDeviceInfo& device) {
 }
 
 void BLEManagerBase::invokeDataCallback(const std::vector<uint8_t>& data) {
-    if (data_callback_) {
-        data_callback_(data);
+    if (!data_callback_) {
+        return;
+    }
+
+    if (can_mode_) {
+        // CAN monitor mode: parse CAN frame from ASCII
+        std::string asciiStr(data.begin(), data.end());
+        auto frame = boundary::ELM327Transport::parseCANFrame(asciiStr);
+        if (frame && frame->data.size() == 8) {
+            // Convert CANFrame to DBC translator format:
+            // [canId_lo, canId_hi, data_byte_0, ..., data_byte_7]
+            std::vector<uint8_t> binary(10);
+            binary[0] = frame->canId & 0xFF;
+            binary[1] = (frame->canId >> 8) & 0xFF;
+            std::copy(frame->data.begin(), frame->data.end(), binary.begin() + 2);
+            data_callback_(binary);
+        }
+        return;
+    }
+
+    // OBD2 mode (existing): parse ASCII hex to binary
+    std::vector<uint8_t> binaryData = parseASCIIResponseToBinary(data);
+    if (!binaryData.empty()) {
+        data_callback_(binaryData);
     }
 }
 

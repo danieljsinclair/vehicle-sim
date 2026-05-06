@@ -44,7 +44,7 @@ didDiscoverPeripheral:(CBPeripheral *)peripheral
         if (peripheral.name) {
             device.name = std::string([peripheral.name UTF8String]);
         } else {
-            device.name = "Unknown OBD2 Device";
+            device.name = "Unknown Device";
         }
 
         device.address = std::string([[peripheral.identifier UUIDString] UTF8String]);

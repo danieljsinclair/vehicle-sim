@@ -47,7 +47,9 @@
 		B1A0000D /* VehicleSignalFactory.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B2A0000D /* VehicleSignalFactory.cpp */; };
 		B1A0000E /* AudiMLBTranslator.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B2A0000E /* AudiMLBTranslator.cpp */; };
 		B1A0000F /* VehicleSignalFormatter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B2A0000F /* VehicleSignalFormatter.cpp */; };
-		B1A00010 /* CliOptions.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B2A00010 /* CliOptions.cpp */; };
+		B1A00011 /* ELM327Transport.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B2A00011 /* ELM327Transport.cpp */; };
+		B1A00012 /* OBD2Protocol.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B2A00012 /* OBD2Protocol.cpp */; };
+		B1A00013 /* CANTranslatorBase.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B2A00013 /* CANTranslatorBase.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -95,7 +97,9 @@
 		B2A0000D /* VehicleSignalFactory.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = VehicleSignalFactory.cpp; path = ../../src/domain/VehicleSignalFactory.cpp; sourceTree = "<group>"; };
 		B2A0000E /* AudiMLBTranslator.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = AudiMLBTranslator.cpp; path = ../../src/domain/AudiMLBTranslator.cpp; sourceTree = "<group>"; };
 		B2A0000F /* VehicleSignalFormatter.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = VehicleSignalFormatter.cpp; path = ../../src/presentation/VehicleSignalFormatter.cpp; sourceTree = "<group>"; };
-		B2A00010 /* CliOptions.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = CliOptions.cpp; path = ../../src/cli/CliOptions.cpp; sourceTree = "<group>"; };
+		B2A00011 /* ELM327Transport.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ELM327Transport.cpp; path = ../../src/boundary/ELM327Transport.cpp; sourceTree = "<group>"; };
+		B2A00012 /* OBD2Protocol.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OBD2Protocol.cpp; path = ../../src/boundary/OBD2Protocol.cpp; sourceTree = "<group>"; };
+		B2A00013 /* CANTranslatorBase.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = CANTranslatorBase.cpp; path = ../../src/domain/CANTranslatorBase.cpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -187,7 +191,9 @@
 				B2A0000D /* VehicleSignalFactory.cpp */,
 				B2A0000E /* AudiMLBTranslator.cpp */,
 				B2A0000F /* VehicleSignalFormatter.cpp */,
-				B2A00010 /* CliOptions.cpp */,
+				B2A00011 /* ELM327Transport.cpp */,
+				B2A00012 /* OBD2Protocol.cpp */,
+				B2A00013 /* CANTranslatorBase.cpp */,
 			);
 			name = "Core (C++)";
 			sourceTree = "<group>";
@@ -299,7 +305,9 @@
 				B1A0000D /* VehicleSignalFactory.cpp in Sources */,
 				B1A0000E /* AudiMLBTranslator.cpp in Sources */,
 				B1A0000F /* VehicleSignalFormatter.cpp in Sources */,
-				B1A00010 /* CliOptions.cpp in Sources */,
+			B1A00011 /* ELM327Transport.cpp in Sources */,
+			B1A00012 /* OBD2Protocol.cpp in Sources */,
+			B1A00013 /* CANTranslatorBase.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
