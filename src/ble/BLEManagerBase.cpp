@@ -3,11 +3,24 @@
 #include "vehicle-sim/boundary/ELM327Transport.h"
 
 #include <iostream>
+#include <iomanip>
 #include <algorithm>
 #include <thread>
 #include <chrono>
 
 namespace vehicle_sim {
+namespace {
+
+std::string padToWidth(const std::string& s, int width) {
+    int displayWidth = 0;
+    for (size_t i = 0; i < s.size(); ++i) {
+        displayWidth += (static_cast<unsigned char>(s[i]) & 0xC0) != 0x80 ? 1 : 0;
+    }
+    if (displayWidth >= width) return s;
+    return s + std::string(width - displayWidth, ' ');
+}
+
+} // anonymous namespace
 
 // ================================================
 // OBD2 UUIDs - Already defined in header as constexpr
@@ -22,7 +35,8 @@ namespace vehicle_sim {
 // ================================================
 
 BLEManagerBase::BLEManagerBase()
-    : connected_(false) {
+    : connected_(false),
+      vehicle_detector_(std::make_unique<domain::VehicleDetector>()) {
 }
 
 void BLEManagerBase::setDeviceFoundCallback(DeviceCallback callback) {
@@ -135,37 +149,37 @@ void BLEManagerBase::startOBD2Polling(int interval_ms) {
     polling_active_ = true;
 
     polling_thread_ = std::thread([this]() {
-        std::cout << "[BLEManagerBase] Starting OBD2 polling at "
-                  << polling_interval_ms_ << "ms intervals" << std::endl;
+        std::cout << "[BLEManagerBase] Starting OBD2 prompt-driven polling" << std::endl;
 
         // Wait a moment for characteristic notifications to be set up
         std::this_thread::sleep_for(std::chrono::milliseconds(POST_CONNECT_SETUP_DELAY_MS));
 
+        const uint8_t pids[] = {
+            OBD2PIDs::THROTTLE_POSITION,
+            OBD2PIDs::VEHICLE_SPEED,
+            OBD2PIDs::ENGINE_RPM,
+            OBD2PIDs::ENGINE_LOAD,
+            OBD2PIDs::COOLANT_TEMP
+        };
+
         while (polling_active_ && connected_) {
-            // Query each PID sequentially
-            // Throttle position
-            queryPID(OBD2PIDs::THROTTLE_POSITION);
-            std::this_thread::sleep_for(std::chrono::milliseconds(PID_QUERY_DELAY_MS));
+            for (uint8_t pid : pids) {
+                if (!polling_active_ || !connected_) break;
 
-            // Vehicle speed
-            queryPID(OBD2PIDs::VEHICLE_SPEED);
-            std::this_thread::sleep_for(std::chrono::milliseconds(PID_QUERY_DELAY_MS));
+                // Send query — ELM327 will respond with data followed by '>'
+                queryPID(pid);
 
-            // Engine RPM
-            queryPID(OBD2PIDs::ENGINE_RPM);
-            std::this_thread::sleep_for(std::chrono::milliseconds(PID_QUERY_DELAY_MS));
+                // Wait for ELM327 '>' prompt before sending next query
+                if (!waitForPrompt()) {
+                    // Timed out waiting for prompt — adapter may be unresponsive.
+                    // Skip to next PID rather than hanging.
+                    std::cout << "[BLEManagerBase] Prompt timeout for PID 0x"
+                              << std::hex << static_cast<int>(pid) << std::dec << std::endl;
+                }
+            }
 
-            // Engine load
-            queryPID(OBD2PIDs::ENGINE_LOAD);
-            std::this_thread::sleep_for(std::chrono::milliseconds(PID_QUERY_DELAY_MS));
-
-            // Coolant temp
-            queryPID(OBD2PIDs::COOLANT_TEMP);
-
-            // Wait remaining interval time
-            std::this_thread::sleep_for(std::chrono::milliseconds(
-                polling_interval_ms_ - TOTAL_PID_QUERY_TIME_MS > 0 ? polling_interval_ms_ - TOTAL_PID_QUERY_TIME_MS : PID_QUERY_DELAY_MS
-            ));
+            // Brief pause between full PID cycles to avoid hammering the bus
+            std::this_thread::sleep_for(std::chrono::milliseconds(polling_interval_ms_));
         }
 
         std::cout << "[BLEManagerBase] OBD2 polling stopped" << std::endl;
@@ -174,9 +188,26 @@ void BLEManagerBase::startOBD2Polling(int interval_ms) {
 
 void BLEManagerBase::stopOBD2Polling() {
     polling_active_ = false;
+    // Wake the polling thread if it's waiting for a prompt
+    notifyPrompt();
     if (polling_thread_.joinable()) {
         polling_thread_.join();
     }
+}
+
+bool BLEManagerBase::waitForPrompt(int timeout_ms) {
+    std::unique_lock<std::mutex> lock(prompt_mutex_);
+    prompt_ready_ = false;
+    return prompt_cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms),
+        [this] { return prompt_ready_; });
+}
+
+void BLEManagerBase::notifyPrompt() {
+    {
+        std::lock_guard<std::mutex> lock(prompt_mutex_);
+        prompt_ready_ = true;
+    }
+    prompt_cv_.notify_one();
 }
 
 bool BLEManagerBase::initializeCANMonitor() {
@@ -226,8 +257,11 @@ void BLEManagerBase::addDiscoveredDevice(const BLEDeviceInfo& device) {
     }
 
     discovered_devices_.push_back(device);
-    std::cout << "[BLEManagerBase] Added device: " << device.name
-              << " (RSSI: " << device.rssi << ")" << std::endl;
+    std::cout << "  [" << std::setw(2) << discovered_devices_.size() << "] "
+              << padToWidth(device.name, 36)
+              << padToWidth(device.address, 40)
+              << "RSSI:" << std::right << std::setw(4) << device.rssi
+              << "  " << (device.isConnected ? "[Connected]" : "[Available]") << std::endl;
 
     // Invoke callback
     invokeDeviceCallback(device);
@@ -261,29 +295,49 @@ void BLEManagerBase::invokeDeviceCallback(const BLEDeviceInfo& device) {
 }
 
 void BLEManagerBase::invokeDataCallback(const std::vector<uint8_t>& data) {
+    // Always track raw BLE activity (before any parsing/dropping)
+    ble_notification_count_++;
+    {
+        std::lock_guard<std::mutex> lock(raw_mutex_);
+        std::ostringstream hex;
+        for (size_t i = 0; i < std::min(data.size(), size_t(16)); ++i) {
+            hex << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(data[i]) << " ";
+        }
+        if (data.size() > 16) hex << "...";
+        last_raw_hex_ = hex.str();
+    }
+
+    // In OBD2 mode (not CAN monitor), detect ELM327 '>' prompt to drive
+    // prompt-based query sequencing. The prompt may arrive as a standalone
+    // notification or appended to a response (e.g., "41 0D FF\r>").
+    if (!can_mode_) {
+        std::string asciiStr(data.begin(), data.end());
+        if (asciiStr.find('>') != std::string::npos) {
+            notifyPrompt();
+        }
+    }
+
     if (!data_callback_) {
         return;
     }
 
+    std::vector<uint8_t> binaryData;
+
     if (can_mode_) {
-        // CAN monitor mode: parse CAN frame from ASCII
         std::string asciiStr(data.begin(), data.end());
         auto frame = boundary::ELM327Transport::parseCANFrame(asciiStr);
         if (frame && frame->data.size() == 8) {
-            // Convert CANFrame to DBC translator format:
-            // [canId_lo, canId_hi, data_byte_0, ..., data_byte_7]
-            std::vector<uint8_t> binary(10);
-            binary[0] = frame->canId & 0xFF;
-            binary[1] = (frame->canId >> 8) & 0xFF;
-            std::copy(frame->data.begin(), frame->data.end(), binary.begin() + 2);
-            data_callback_(binary);
+            binaryData.resize(10);
+            binaryData[0] = frame->canId & 0xFF;
+            binaryData[1] = (frame->canId >> 8) & 0xFF;
+            std::copy(frame->data.begin(), frame->data.end(), binaryData.begin() + 2);
         }
-        return;
+    } else {
+        binaryData = parseASCIIResponseToBinary(data);
     }
 
-    // OBD2 mode (existing): parse ASCII hex to binary
-    std::vector<uint8_t> binaryData = parseASCIIResponseToBinary(data);
     if (!binaryData.empty()) {
+        vehicle_detector_->observeFrame(binaryData);
         data_callback_(binaryData);
     }
 }

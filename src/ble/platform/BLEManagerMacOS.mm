@@ -288,12 +288,18 @@ bool BLEManagerMacOS::connect(const std::string& device_identifier) {
         return false;
     }
 
+    // Wait for Bluetooth to be ready (connect may run in a new process without prior scan)
+    if (!waitForBluetoothReady(3000)) {
+        std::cerr << "[BLEManagerMacOS] Bluetooth not ready - check permissions" << std::endl;
+        return false;
+    }
+
     // Find the peripheral from our discovered list using base class method
     auto device = findDeviceByAddress(device_identifier);
     CBPeripheral* target_peripheral = nullptr;
 
     if (device && device->peripheral) {
-        // Transfer ownership from void* to CBPeripheral*
+        // Cast from void* to CBPeripheral* (stored via CFBridgingRetain, +1 retain)
         target_peripheral = (CBPeripheral*)device->peripheral;
         // Clear the void* to prevent double-free
         const_cast<BLEDeviceInfo&>(*device).peripheral = nullptr;
@@ -412,20 +418,28 @@ void BLEManagerMacOS::onConnectionStateChanged(bool is_connected, const std::str
 }
 
 void BLEManagerMacOS::onCharacteristicDiscovered(CBCharacteristic* characteristic) {
-    // Store write characteristic if it has write property
+    bool gotWrite = false;
+    bool gotNotify = false;
+
     if (characteristic.properties & CBCharacteristicPropertyWrite) {
         write_characteristic_ = characteristic;
         [write_characteristic_ retain];
         std::cout << "[BLEManagerMacOS] Write characteristic found: "
                   << [characteristic.UUID UUIDString] << std::endl;
+        gotWrite = true;
     }
 
-    // Store notify characteristic if it has notify property
     if (characteristic.properties & CBCharacteristicPropertyNotify) {
         notify_characteristic_ = characteristic;
         [notify_characteristic_ retain];
         std::cout << "[BLEManagerMacOS] Notify characteristic found: "
                   << [characteristic.UUID UUIDString] << std::endl;
+        gotNotify = true;
+    }
+
+    if (gotWrite || gotNotify) {
+        std::lock_guard<std::mutex> lock(characteristics_mutex_);
+        characteristics_cv_.notify_all();
     }
 }
 
@@ -481,11 +495,34 @@ CBPeripheral* BLEManagerMacOS::findPeripheralByAddress(const std::string& addres
     auto device = findDeviceByAddress(address);
     if (device && device->peripheral) {
         CBPeripheral* peripheral = (CBPeripheral*)device->peripheral;
-        // Clear to prevent double-free
         const_cast<BLEDeviceInfo&>(*device).peripheral = nullptr;
         return peripheral;
     }
     return nullptr;
+}
+
+bool BLEManagerMacOS::waitForCharacteristics(int timeout_ms) {
+    std::unique_lock<std::mutex> lock(characteristics_mutex_);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+
+    while (!write_characteristic_ || !notify_characteristic_) {
+        if (characteristics_cv_.wait_until(lock, deadline) == std::cv_status::timeout) {
+            break;
+        }
+    }
+
+    if (!write_characteristic_) {
+        std::cerr << "[BLEManagerMacOS] Timed out waiting for write characteristic ("
+                  << timeout_ms << "ms)" << std::endl;
+        return false;
+    }
+    if (!notify_characteristic_) {
+        std::cerr << "[BLEManagerMacOS] Timed out waiting for notify characteristic ("
+                  << timeout_ms << "ms)" << std::endl;
+        return false;
+    }
+
+    return true;
 }
 
 } // namespace vehicle_sim

@@ -163,6 +163,24 @@ class VehicleViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Detection
+
+    var detectionInfo: String {
+        return wrapper?.detectionInfo ?? ""
+    }
+
+    var isReceivingData: Bool {
+        return wrapper?.isReceivingData ?? false
+    }
+
+    var bleNotificationCount: Int {
+        return Int(wrapper?.bleNotificationCount ?? 0)
+    }
+
+    var lastRawHex: String {
+        return wrapper?.lastRawHex ?? ""
+    }
+
     // MARK: - Polling
 
     private func startPolling() {

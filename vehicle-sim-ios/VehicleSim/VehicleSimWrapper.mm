@@ -267,8 +267,12 @@ std::string getEmbeddedDBC(const std::string& vehicleType) {
     _connectedDeviceName = deviceName;
     _isConnected.store(true);
 
-    // Wait for service discovery
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    // Wait for write + notify characteristics (blocks until discovered or timeout)
+    if (!_bleManager->waitForCharacteristics(10000)) {
+        _bleManager->disconnect();
+        _isConnected.store(false);
+        return NO;
+    }
 
     // Initialize ELM327 based on protocol
     if (_protocol == VehicleProtocol::CAN) {
@@ -284,8 +288,6 @@ std::string getEmbeddedDBC(const std::string& vehicleType) {
             return NO;
         }
     }
-
-    std::this_thread::sleep_for(std::chrono::seconds(1));
 
     // Set up data callback
     _bleManager->onDataReceived([self](const std::vector<uint8_t>& data) {
@@ -420,7 +422,60 @@ std::string getEmbeddedDBC(const std::string& vehicleType) {
     }
 
     std::string dbcContent = getEmbeddedDBC(vehicleTypeStr);
-    return _translationService->loadVehicleWithContent(vehicleTypeStr, _protocol, dbcContent);
+    bool loaded = _translationService->loadVehicleWithContent(vehicleTypeStr, _protocol, dbcContent);
+
+    // Reset detector when switching vehicles
+    if (_bleManager->vehicleDetector()) {
+        _bleManager->vehicleDetector()->reset();
+    }
+
+    return loaded ? YES : NO;
+}
+
+- (NSString *)detectionInfo {
+    auto* detector = _bleManager ? _bleManager->vehicleDetector() : nullptr;
+    if (!detector) return @"";
+    auto result = detector->getResult();
+    if (result.frameCount == 0) return @"";
+
+    NSMutableString* info = [NSMutableString string];
+    [info appendFormat:@"Frames: %d", result.frameCount];
+
+    if (!result.observedCanIds.empty()) {
+        [info appendString:@" | CAN IDs:"];
+        for (uint16_t id : result.observedCanIds) {
+            [info appendFormat:@" 0x%04X", id];
+        }
+    }
+
+    if (result.hasSuggestion()) {
+        const char* conf = "";
+        switch (result.confidence) {
+            case domain::DetectionConfidence::High: conf = "high"; break;
+            case domain::DetectionConfidence::Medium: conf = "medium"; break;
+            case domain::DetectionConfidence::Low: conf = "low"; break;
+            default: conf = "none"; break;
+        }
+        [info appendFormat:@" | %@ (%@)",
+            [NSString stringWithUTF8String:result.suggestedVehicleId.c_str()],
+            [NSString stringWithUTF8String:conf]];
+    }
+
+    return info;
+}
+
+- (BOOL)isReceivingData {
+    auto* detector = _bleManager ? _bleManager->vehicleDetector() : nullptr;
+    return detector ? detector->isReceivingData() : NO;
+}
+
+- (int)bleNotificationCount {
+    return _bleManager ? _bleManager->bleNotificationCount() : 0;
+}
+
+- (NSString *)lastRawHex {
+    if (!_bleManager) return @"";
+    return [NSString stringWithUTF8String:_bleManager->lastRawHex().c_str()];
 }
 
 @end

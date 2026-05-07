@@ -3,6 +3,9 @@
 #include "vehicle-sim/BLEManager.h"
 #include "vehicle-sim/ble/BLEManagerBase.h"
 
+#include <thread>
+#include <chrono>
+
 using namespace vehicle_sim;
 using testing::_;
 using testing::Return;
@@ -292,4 +295,140 @@ TEST(BLEManagerBaseTest, SignalQualityConversion)
     EXPECT_EQ(BLEManagerBase::signalQuality(-70), "Fair");
     EXPECT_EQ(BLEManagerBase::signalQuality(-75), "Fair");
     EXPECT_EQ(BLEManagerBase::signalQuality(-90), "Poor");
+}
+
+// ================================================
+// ELM327 Prompt-Driven Sequencing Tests
+// ================================================
+
+namespace {
+
+/**
+ * Concrete BLEManagerBase subclass that exposes protected members for testing.
+ * Also overrides isConnected to return a controllable value.
+ */
+class PromptTestBLEManager : public BLEManagerBase {
+public:
+    std::vector<BLEDeviceInfo> scanForDevices(int) override { return {}; }
+    bool connect(const std::string&) override { return false; }
+    void disconnect() override {}
+    std::vector<uint8_t> lastSent;
+    int sendCount = 0;
+
+    void send(const std::vector<uint8_t>& data) override {
+        lastSent = data;
+        sendCount++;
+    }
+
+    // Allow tests to control connection state
+    std::atomic<bool> fakeConnected{false};
+    bool isConnected() const override { return fakeConnected.load(); }
+    std::string getConnectedDeviceId() const override { return "test-device"; }
+
+    // Expose protected methods
+    using BLEManagerBase::waitForPrompt;
+    using BLEManagerBase::notifyPrompt;
+    using BLEManagerBase::invokeDataCallback;
+    using BLEManagerBase::prompt_ready_;
+};
+
+} // anonymous namespace
+
+TEST(BLEManagerBaseTest, WaitForPromptReturnsTrueWhenNotified)
+{
+    PromptTestBLEManager manager;
+
+    // Notify from another thread, wait on this thread
+    std::thread notifier([&manager]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        manager.notifyPrompt();
+    });
+
+    bool result = manager.waitForPrompt(1000);
+    notifier.join();
+
+    EXPECT_TRUE(result);
+}
+
+TEST(BLEManagerBaseTest, WaitForPromptReturnsFalseOnTimeout)
+{
+    PromptTestBLEManager manager;
+
+    // No notification — should time out
+    bool result = manager.waitForPrompt(100);
+
+    EXPECT_FALSE(result);
+}
+
+TEST(BLEManagerBaseTest, InvokeDataCallbackDetectsStandalonePrompt)
+{
+    PromptTestBLEManager manager;
+
+    // A standalone '>' BLE notification should trigger prompt
+    std::vector<uint8_t> promptOnly = {'>'};
+    manager.invokeDataCallback(promptOnly);
+
+    EXPECT_TRUE(manager.prompt_ready_);
+}
+
+TEST(BLEManagerBaseTest, InvokeDataCallbackDetectsPromptAppendedToResponse)
+{
+    PromptTestBLEManager manager;
+
+    // ELM327 often sends response + prompt together: "41 0D FF\r>"
+    std::vector<uint8_t> responseWithPrompt = {
+        '4', '1', ' ', '0', 'D', ' ', 'F', 'F', '\r', '>'
+    };
+    manager.invokeDataCallback(responseWithPrompt);
+
+    EXPECT_TRUE(manager.prompt_ready_);
+}
+
+TEST(BLEManagerBaseTest, InvokeDataCallbackDoesNotSignalPromptWithoutPromptChar)
+{
+    PromptTestBLEManager manager;
+
+    // Normal response without prompt: "41 0D FF\r"
+    std::vector<uint8_t> responseNoPrompt = {
+        '4', '1', ' ', '0', 'D', ' ', 'F', 'F', '\r'
+    };
+    manager.invokeDataCallback(responseNoPrompt);
+
+    EXPECT_FALSE(manager.prompt_ready_);
+}
+
+TEST(BLEManagerBaseTest, InvokeDataCallbackDoesNotSignalPromptInCANMode)
+{
+    PromptTestBLEManager manager;
+
+    // Put into CAN mode
+    manager.startCANMonitor(200);
+
+    // Even with '>' in the data, CAN mode should not trigger prompt signalling
+    std::vector<uint8_t> dataWithPrompt = {'>', '4', '1', ' ', '0', 'D'};
+    manager.invokeDataCallback(dataWithPrompt);
+
+    EXPECT_FALSE(manager.prompt_ready_);
+}
+
+TEST(BLEManagerBaseTest, StopOBD2PollingWakesPromptWait)
+{
+    PromptTestBLEManager manager;
+    manager.fakeConnected = true;
+
+    // Set a data callback so invokeDataCallback doesn't bail early
+    manager.setDataReceivedCallback([](const std::vector<uint8_t>&) {});
+
+    manager.startOBD2Polling(200);
+
+    // Let the thread enter waitForPrompt (POST_CONNECT_SETUP_DELAY_MS is 500ms,
+    // then it sends a query and waits for prompt)
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+
+    // stopOBD2Polling should unblock the thread and join it
+    // If notifyPrompt is not called, this would hang forever
+    manager.stopOBD2Polling();
+
+    // If we get here, stopOBD2Polling correctly woke the waiting thread
+    SUCCEED();
 }

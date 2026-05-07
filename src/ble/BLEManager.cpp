@@ -106,6 +106,10 @@ BLEManagerBase* BLEManager::getPlatform() const {
     return platform_.get();
 }
 
+bool BLEManager::waitForCharacteristics(int timeout_ms) {
+    return platform_ ? platform_->waitForCharacteristics(timeout_ms) : false;
+}
+
 bool BLEManager::initializeELM327() {
     return platform_ ? platform_->initializeELM327() : false;
 }
@@ -143,6 +147,18 @@ void BLEManager::processOBD2Data(const std::string& asciiData) {
     if (platform_) {
         platform_->processOBD2Data(asciiData);
     }
+}
+
+domain::VehicleDetector* BLEManager::vehicleDetector() {
+    return platform_ ? platform_->vehicleDetector() : nullptr;
+}
+
+int BLEManager::bleNotificationCount() const {
+    return platform_ ? platform_->bleNotificationCount() : 0;
+}
+
+std::string BLEManager::lastRawHex() const {
+    return platform_ ? platform_->lastRawHex() : "";
 }
 
 } // namespace vehicle_sim

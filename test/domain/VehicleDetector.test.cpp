@@ -1,249 +1,350 @@
 #include <gtest/gtest.h>
-#include <gmock/gmock.h>
 #include "vehicle-sim/domain/VehicleDetector.h"
+#include <thread>
+#include <chrono>
 
 using namespace vehicle_sim::domain;
-using testing::Eq;
 
-// ================================================
-// Test Suite 1: WMI Decoding Tests
-// ================================================
+// --- Helpers ---
 
-TEST(VehicleDetector, DecodeWMI_Tesla5YJ)
-{
-    auto make = VehicleDetector::decodeWMI("5YJ");
-    EXPECT_EQ(make, VehicleMake::Tesla);
+static std::vector<uint8_t> canFrame(uint16_t canId, const std::vector<uint8_t>& data = {0,0,0,0,0,0,0,0}) {
+    std::vector<uint8_t> frame(10);
+    frame[0] = canId & 0xFF;
+    frame[1] = (canId >> 8) & 0xFF;
+    std::copy(data.begin(), data.begin() + std::min<size_t>(data.size(), 8), frame.begin() + 2);
+    return frame;
 }
 
-TEST(VehicleDetector, DecodeWMI_Tesla7SA)
-{
-    auto make = VehicleDetector::decodeWMI("7SA");
-    EXPECT_EQ(make, VehicleMake::Tesla);
-}
-
-TEST(VehicleDetector, DecodeWMI_AudiWAU)
-{
-    auto make = VehicleDetector::decodeWMI("WAU");
-    EXPECT_EQ(make, VehicleMake::Audi);
-}
-
-TEST(VehicleDetector, DecodeWMI_AudiWA1)
-{
-    auto make = VehicleDetector::decodeWMI("WA1");
-    EXPECT_EQ(make, VehicleMake::Audi);
-}
-
-TEST(VehicleDetector, DecodeWMI_AudiTRU)
-{
-    auto make = VehicleDetector::decodeWMI("TRU");
-    EXPECT_EQ(make, VehicleMake::Audi);
-}
-
-TEST(VehicleDetector, DecodeWMI_VolkswagenWVW)
-{
-    auto make = VehicleDetector::decodeWMI("WVW");
-    EXPECT_EQ(make, VehicleMake::Volkswagen);
-}
-
-TEST(VehicleDetector, DecodeWMI_BMWWBA)
-{
-    auto make = VehicleDetector::decodeWMI("WBA");
-    EXPECT_EQ(make, VehicleMake::BMW);
-}
-
-TEST(VehicleDetector, DecodeWMI_Unknown)
-{
-    auto make = VehicleDetector::decodeWMI("XYZ");
-    EXPECT_EQ(make, VehicleMake::Unknown);
-}
-
-TEST(VehicleDetector, DecodeWMI_Generic)
-{
-    auto make = VehicleDetector::decodeWMI("1G1");
-    EXPECT_EQ(make, VehicleMake::Generic);
+static std::vector<uint8_t> obd2Frame(uint8_t mode, uint8_t pid, const std::vector<uint8_t>& data = {}) {
+    std::vector<uint8_t> frame = {static_cast<uint8_t>(mode + 0x40), pid};
+    frame.insert(frame.end(), data.begin(), data.end());
+    return frame;
 }
 
 // ================================================
-// Test Suite 2: Config ID Mapping Tests
+// WMI Decoding Tests
 // ================================================
 
-TEST(VehicleDetector, MakeToConfigId_TeslaElectric)
-{
-    auto configId = VehicleDetector::makeToConfigId(VehicleMake::Tesla, true);
-    EXPECT_EQ(configId, "tesla_model3");
+TEST(VehicleDetector, DecodeWMI_Tesla5YJ) {
+    EXPECT_EQ(VehicleDetector::decodeWMI("5YJ"), VehicleMake::Tesla);
 }
 
-TEST(VehicleDetector, MakeToConfigId_AudiElectric)
-{
-    auto configId = VehicleDetector::makeToConfigId(VehicleMake::Audi, true);
-    EXPECT_EQ(configId, "audi_mlb");
+TEST(VehicleDetector, DecodeWMI_Tesla7SA) {
+    EXPECT_EQ(VehicleDetector::decodeWMI("7SA"), VehicleMake::Tesla);
 }
 
-TEST(VehicleDetector, MakeToConfigId_AudiGasoline)
-{
-    auto configId = VehicleDetector::makeToConfigId(VehicleMake::Audi, false);
-    EXPECT_EQ(configId, "generic");
+TEST(VehicleDetector, DecodeWMI_AudiWAU) {
+    EXPECT_EQ(VehicleDetector::decodeWMI("WAU"), VehicleMake::Audi);
 }
 
-TEST(VehicleDetector, MakeToConfigId_VolkswagenElectric)
-{
-    auto configId = VehicleDetector::makeToConfigId(VehicleMake::Volkswagen, true);
-    EXPECT_EQ(configId, "audi_mlb");
+TEST(VehicleDetector, DecodeWMI_AudiWA1) {
+    EXPECT_EQ(VehicleDetector::decodeWMI("WA1"), VehicleMake::Audi);
 }
 
-TEST(VehicleDetector, MakeToConfigId_Generic)
-{
-    auto configId = VehicleDetector::makeToConfigId(VehicleMake::Generic, false);
-    EXPECT_EQ(configId, "generic");
+TEST(VehicleDetector, DecodeWMI_AudiTRU) {
+    EXPECT_EQ(VehicleDetector::decodeWMI("TRU"), VehicleMake::Audi);
+}
+
+TEST(VehicleDetector, DecodeWMI_VolkswagenWVW) {
+    EXPECT_EQ(VehicleDetector::decodeWMI("WVW"), VehicleMake::Volkswagen);
+}
+
+TEST(VehicleDetector, DecodeWMI_BMWWBA) {
+    EXPECT_EQ(VehicleDetector::decodeWMI("WBA"), VehicleMake::BMW);
+}
+
+TEST(VehicleDetector, DecodeWMI_Unknown) {
+    // "999" starts with a digit > 5, so not a valid region prefix
+    EXPECT_EQ(VehicleDetector::decodeWMI("999"), VehicleMake::Unknown);
+}
+
+TEST(VehicleDetector, DecodeWMI_Generic) {
+    EXPECT_EQ(VehicleDetector::decodeWMI("1G1"), VehicleMake::Generic);
 }
 
 // ================================================
-// Test Suite 3: VIN Extraction Tests
+// Config ID Mapping Tests
 // ================================================
 
-TEST(VehicleDetector, FeedVINResponse_SingleFrame)
-{
+TEST(VehicleDetector, MakeToConfigId_TeslaElectric) {
+    EXPECT_EQ(VehicleDetector::makeToConfigId(VehicleMake::Tesla, true), "tesla_model3");
+}
+
+TEST(VehicleDetector, MakeToConfigId_AudiElectric) {
+    EXPECT_EQ(VehicleDetector::makeToConfigId(VehicleMake::Audi, true), "audi_mlb_evo");
+}
+
+TEST(VehicleDetector, MakeToConfigId_AudiGasoline) {
+    EXPECT_EQ(VehicleDetector::makeToConfigId(VehicleMake::Audi, false), "generic");
+}
+
+TEST(VehicleDetector, MakeToConfigId_Generic) {
+    EXPECT_EQ(VehicleDetector::makeToConfigId(VehicleMake::Generic, false), "generic");
+}
+
+// ================================================
+// VIN Extraction Tests
+// ================================================
+
+TEST(VehicleDetector, FeedVINResponse_SingleFrame) {
     VehicleDetector detector;
     std::vector<uint8_t> response = {
         0x49, 0x02, 0x01, 0x00, 0x00, 0x00, 0x35, 0x59,
         0x4A, 0x33, 0x53, 0x32, 0x44, 0x58, 0x4D, 0x48,
         0x31, 0x30, 0x35, 0x37, 0x36
     };
-    bool success = detector.feedVINResponse(response);
-    EXPECT_TRUE(success);
-
+    EXPECT_TRUE(detector.feedVINResponse(response));
     auto result = detector.getResult();
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->vin, "5YJ3S2DXMH10576");
+    EXPECT_EQ(result.vin, "5YJ3S2DXMH10576");
 }
 
-TEST(VehicleDetector, FeedVINResponse_MultiFrame)
-{
-    VehicleDetector detector;
-
-    std::vector<uint8_t> frame1 = {0x49, 0x02, 0x01, 0x00, 0x00, 0x00, 0x57, 0x41};
-    std::vector<uint8_t> frame2 = {0x49, 0x02, 0x02, 0x55, 0x5A, 0x5A, 0x5A, 0x5A};
-    std::vector<uint8_t> frame3 = {0x49, 0x02, 0x03, 0x5A, 0x31, 0x32, 0x33, 0x34};
-    std::vector<uint8_t> frame4 = {0x49, 0x02, 0x04, 0x35, 0x36, 0x37, 0x00, 0x00};
-
-    EXPECT_TRUE(detector.feedVINResponse(frame1));
-    EXPECT_TRUE(detector.feedVINResponse(frame2));
-    EXPECT_TRUE(detector.feedVINResponse(frame3));
-    EXPECT_TRUE(detector.feedVINResponse(frame4));
-
-    auto result = detector.getResult();
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->vin, "WAUZZZZZ1234567");
-}
-
-TEST(VehicleDetector, ExtractVINFromResponse_EmptyResponse)
-{
-    std::vector<uint8_t> empty;
-    auto vin = VehicleDetector::extractVINFromResponse(empty);
-    EXPECT_TRUE(vin.empty());
+TEST(VehicleDetector, ExtractVINFromResponse_EmptyResponse) {
+    EXPECT_TRUE(VehicleDetector::extractVINFromResponse({}).empty());
 }
 
 // ================================================
-// Test Suite 4: Fuel Type Tests
+// Fuel Type Tests
 // ================================================
 
-TEST(VehicleDetector, FeedFuelTypeResponse_Electric)
-{
+TEST(VehicleDetector, FeedFuelTypeResponse_Electric) {
     VehicleDetector detector;
-    std::vector<uint8_t> response = {0x49, 0x51, 0x08};
-    bool success = detector.feedFuelTypeResponse(response);
-    EXPECT_TRUE(success);
-
+    EXPECT_TRUE(detector.feedFuelTypeResponse({0x49, 0x51, 0x08}));
     auto result = detector.getResult();
-    ASSERT_TRUE(result.has_value());
-    EXPECT_TRUE(result->isElectric);
+    EXPECT_TRUE(result.isElectric);
 }
 
-TEST(VehicleDetector, FeedFuelTypeResponse_Gasoline)
-{
+TEST(VehicleDetector, FeedFuelTypeResponse_Gasoline) {
     VehicleDetector detector;
-    std::vector<uint8_t> response = {0x49, 0x51, 0x01};
-    bool success = detector.feedFuelTypeResponse(response);
-    EXPECT_TRUE(success);
-
+    EXPECT_TRUE(detector.feedFuelTypeResponse({0x49, 0x51, 0x01}));
     auto result = detector.getResult();
-    ASSERT_TRUE(result.has_value());
-    EXPECT_FALSE(result->isElectric);
+    EXPECT_FALSE(result.isElectric);
 }
 
 // ================================================
-// Test Suite 5: Full Detection Flow Tests
+// CAN ID Fingerprinting Tests
 // ================================================
 
-TEST(VehicleDetector, FullDetectionFlow_TeslaEV)
-{
+TEST(VehicleDetector, EmptyDetector_NoSuggestion) {
     VehicleDetector detector;
-
-    std::vector<uint8_t> teslaVIN = {0x49, 0x02, 0x01, 0x00, 0x00, 0x00, 0x35, 0x59, 0x4A, 0x33, 0x45, 0x31, 0x45, 0x41, 0x31, 0x4E, 0x46, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36};
-    detector.feedVINResponse(teslaVIN);
-
-    std::vector<uint8_t> fuelType = {0x41, 0x51, 0x08};
-    detector.feedFuelTypeResponse(fuelType);
-
     auto result = detector.getResult();
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->make, VehicleMake::Tesla);
-    EXPECT_TRUE(result->isElectric);
-    EXPECT_EQ(result->suggestedVehicleId, "tesla_model3");
-    EXPECT_EQ(result->vin, "5YJ3E1EA1NF123456");
+    EXPECT_FALSE(result.hasSuggestion());
+    EXPECT_EQ(DetectionConfidence::None, result.confidence);
+    EXPECT_TRUE(result.observedCanIds.empty());
+    EXPECT_EQ(0, result.frameCount);
 }
 
-TEST(VehicleDetector, FullDetectionFlow_AudiEV)
-{
+TEST(VehicleDetector, SingleTeslaCANId_Accumulates) {
     VehicleDetector detector;
-
-    std::vector<uint8_t> audiVIN = {0x49, 0x02, 0x01, 0x00, 0x00, 0x00, 0x57, 0x41, 0x55, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A};
-    detector.feedVINResponse(audiVIN);
-
-    std::vector<uint8_t> fuelType = {0x41, 0x51, 0x08};
-    detector.feedFuelTypeResponse(fuelType);
-
+    detector.observeFrame(canFrame(0x108));
     auto result = detector.getResult();
-    ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->make, VehicleMake::Audi);
-    EXPECT_TRUE(result->isElectric);
-    EXPECT_EQ(result->suggestedVehicleId, "audi_mlb");
+    EXPECT_EQ(1, result.frameCount);
+    EXPECT_TRUE(result.observedCanIds.count(0x108));
+}
+
+TEST(VehicleDetector, MultipleCANIds_Accumulate) {
+    VehicleDetector detector;
+    detector.observeFrame(canFrame(0x108));
+    detector.observeFrame(canFrame(0x118));
+    detector.observeFrame(canFrame(0x129));
+    auto result = detector.getResult();
+    EXPECT_EQ(3, result.frameCount);
+    EXPECT_EQ(3u, result.observedCanIds.size());
+}
+
+TEST(VehicleDetector, DuplicateCANIds_Deduplicate) {
+    VehicleDetector detector;
+    detector.observeFrame(canFrame(0x108));
+    detector.observeFrame(canFrame(0x108));
+    auto result = detector.getResult();
+    EXPECT_EQ(2, result.frameCount);
+    EXPECT_EQ(1u, result.observedCanIds.size());
+}
+
+TEST(VehicleDetector, TeslaDetection_HighConfidence_AllThreeIds) {
+    VehicleDetector detector;
+    detector.observeFrame(canFrame(0x108));
+    detector.observeFrame(canFrame(0x118));
+    detector.observeFrame(canFrame(0x129));
+    auto result = detector.getResult();
+    EXPECT_EQ("tesla_model3", result.suggestedVehicleId);
+    EXPECT_EQ(VehicleMake::Tesla, result.make);
+    EXPECT_EQ(DetectionConfidence::High, result.confidence);
+}
+
+TEST(VehicleDetector, TeslaDetection_MediumConfidence_TwoIds) {
+    VehicleDetector detector;
+    detector.observeFrame(canFrame(0x108));
+    detector.observeFrame(canFrame(0x118));
+    auto result = detector.getResult();
+    EXPECT_EQ("tesla_model3", result.suggestedVehicleId);
+    EXPECT_EQ(DetectionConfidence::Medium, result.confidence);
+}
+
+TEST(VehicleDetector, TeslaDetection_LowConfidence_OneId) {
+    VehicleDetector detector;
+    detector.observeFrame(canFrame(0x108));
+    auto result = detector.getResult();
+    EXPECT_EQ("tesla_model3", result.suggestedVehicleId);
+    EXPECT_EQ(DetectionConfidence::Low, result.confidence);
+}
+
+TEST(VehicleDetector, AudiDetection_HighConfidence) {
+    VehicleDetector detector;
+    for (int i = 0; i < 5; ++i) detector.observeFrame(canFrame(0x100));
+    auto result = detector.getResult();
+    EXPECT_EQ("audi_mlb_evo", result.suggestedVehicleId);
+    EXPECT_EQ(VehicleMake::Audi, result.make);
+    EXPECT_EQ(DetectionConfidence::High, result.confidence);
+    EXPECT_EQ(5, result.frameCount);
+}
+
+TEST(VehicleDetector, AudiDetection_LowConfidence) {
+    VehicleDetector detector;
+    detector.observeFrame(canFrame(0x100));
+    auto result = detector.getResult();
+    EXPECT_EQ("audi_mlb_evo", result.suggestedVehicleId);
+    EXPECT_EQ(DetectionConfidence::Low, result.confidence);
+}
+
+TEST(VehicleDetector, GenericOBD2Detection) {
+    VehicleDetector detector;
+    detector.observeFrame(obd2Frame(0x01, 0x0D, {0x20}));
+    auto result = detector.getResult();
+    EXPECT_EQ("generic", result.suggestedVehicleId);
+    EXPECT_GE(result.confidence, DetectionConfidence::Low);
+}
+
+TEST(VehicleDetector, ShortFrameTreatedAsOBD2NotCAN) {
+    VehicleDetector detector;
+    detector.observeFrame({0x41, 0x0D, 0x20});
+    auto result = detector.getResult();
+    EXPECT_EQ(0u, result.observedCanIds.size());
+}
+
+TEST(VehicleDetector, ConflictingEvidence_NoClearSuggestion) {
+    VehicleDetector detector;
+    detector.observeFrame(canFrame(0x108));
+    detector.observeFrame(canFrame(0x100));
+    auto result = detector.getResult();
+    EXPECT_EQ(DetectionConfidence::None, result.confidence);
+}
+
+TEST(VehicleDetector, UnknownCANId_NoSuggestion) {
+    VehicleDetector detector;
+    detector.observeFrame(canFrame(0x200));
+    auto result = detector.getResult();
+    EXPECT_FALSE(result.hasSuggestion());
+    EXPECT_EQ(1u, result.observedCanIds.size());
 }
 
 // ================================================
-// Test Suite 6: State Management Tests
+// Evidence Summary Tests
 // ================================================
 
-TEST(VehicleDetector, Reset)
-{
+TEST(VehicleDetector, EvidenceSummary_ContainsCANIds) {
     VehicleDetector detector;
+    detector.observeFrame(canFrame(0x108));
+    detector.observeFrame(canFrame(0x118));
+    auto result = detector.getResult();
+    EXPECT_FALSE(result.evidenceSummary.empty());
+}
 
-    std::vector<uint8_t> vinResponse = {0x49, 0x02, 0x01, 0x00, 0x00, 0x00, 0x35, 0x59, 0x4A, 0x33, 0x53, 0x32, 0x44, 0x58, 0x4D, 0x48, 0x31, 0x30, 0x35, 0x37, 0x36};
-    detector.feedVINResponse(vinResponse);
+// ================================================
+// State Management Tests
+// ================================================
 
-    ASSERT_TRUE(detector.getResult().has_value());
-
+TEST(VehicleDetector, Reset_ClearsState) {
+    VehicleDetector detector;
+    detector.observeFrame(canFrame(0x108));
+    detector.observeFrame(canFrame(0x118));
     detector.reset();
+    auto result = detector.getResult();
+    EXPECT_TRUE(result.observedCanIds.empty());
+    EXPECT_EQ(0, result.frameCount);
+    EXPECT_FALSE(result.hasSuggestion());
+}
 
-    EXPECT_FALSE(detector.getResult().has_value());
+TEST(VehicleDetector, Reset_ClearsVINState) {
+    VehicleDetector detector;
+    detector.feedVINResponse({0x49, 0x02, 0x01, 0x00, 0x00, 0x00, 0x35, 0x59,
+                              0x4A, 0x33, 0x53, 0x32, 0x44, 0x58, 0x4D, 0x48,
+                              0x31, 0x30, 0x35, 0x37, 0x36});
+    ASSERT_FALSE(detector.getResult().vin.empty());
+    detector.reset();
+    EXPECT_TRUE(detector.getResult().vin.empty());
 }
 
 // ================================================
-// Test Suite 7: Build Query Tests
+// Raw Frame History Tests
 // ================================================
 
-TEST(VehicleDetector, BuildVINQuery)
-{
+TEST(VehicleDetector, RecentFrames_ReturnsLastN) {
+    VehicleDetector detector;
+    for (int i = 0; i < 5; ++i) {
+        detector.observeFrame(canFrame(0x100 + static_cast<uint16_t>(i)));
+    }
+    auto frames = detector.getRecentFrames(3);
+    EXPECT_EQ(3u, frames.size());
+    // Last 3 frames should have CAN IDs 0x102, 0x103, 0x104
+}
+
+TEST(VehicleDetector, RecentFrames_ReturnsAllIfLessThanMax) {
+    VehicleDetector detector;
+    detector.observeFrame(canFrame(0x100));
+    auto frames = detector.getRecentFrames(10);
+    EXPECT_EQ(1u, frames.size());
+}
+
+TEST(VehicleDetector, IsReceivingData_TrueWhenRecent) {
+    VehicleDetector detector;
+    detector.observeFrame(canFrame(0x108));
+    EXPECT_TRUE(detector.isReceivingData());
+}
+
+TEST(VehicleDetector, IsReceivingData_FalseWhenNoFrames) {
+    VehicleDetector detector;
+    EXPECT_FALSE(detector.isReceivingData());
+}
+
+// ================================================
+// Build Query Tests
+// ================================================
+
+TEST(VehicleDetector, BuildVINQuery) {
     auto query = VehicleDetector::buildVINQuery();
-    ASSERT_EQ(query.size(), 2);
-    EXPECT_EQ(query[0], 0x09);
-    EXPECT_EQ(query[1], 0x02);
+    ASSERT_EQ(2u, query.size());
+    EXPECT_EQ(0x09, query[0]);
+    EXPECT_EQ(0x02, query[1]);
 }
 
-TEST(VehicleDetector, BuildFuelTypeQuery)
-{
+TEST(VehicleDetector, BuildFuelTypeQuery) {
     auto query = VehicleDetector::buildFuelTypeQuery();
-    ASSERT_EQ(query.size(), 2);
-    EXPECT_EQ(query[0], 0x01);
-    EXPECT_EQ(query[1], 0x51);
+    ASSERT_EQ(2u, query.size());
+    EXPECT_EQ(0x01, query[0]);
+    EXPECT_EQ(0x51, query[1]);
+}
+
+// ================================================
+// Realistic Tesla CAN Stream Test
+// ================================================
+
+TEST(VehicleDetector, RealisticTeslaStream) {
+    VehicleDetector detector;
+    std::vector<uint8_t> dirData = {0x00, 0x00, 0x00, 0x90, 0x01, 0x10, 0x27, 0x00};
+    std::vector<uint8_t> diData = {0x00, 0x00, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00};
+    std::vector<uint8_t> sccmData = {0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+    for (int i = 0; i < 10; ++i) {
+        detector.observeFrame(canFrame(0x108, dirData));
+        detector.observeFrame(canFrame(0x118, diData));
+    }
+    for (int i = 0; i < 5; ++i) {
+        detector.observeFrame(canFrame(0x129, sccmData));
+    }
+
+    auto result = detector.getResult();
+    EXPECT_EQ("tesla_model3", result.suggestedVehicleId);
+    EXPECT_EQ(DetectionConfidence::High, result.confidence);
+    EXPECT_EQ(25, result.frameCount);
+    EXPECT_EQ(3u, result.observedCanIds.size());
 }

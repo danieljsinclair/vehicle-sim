@@ -4,6 +4,7 @@
 #include "vehicle-sim/ble/BLEDeviceInfo.h"
 
 #include <atomic>
+#include <condition_variable>
 
 // Forward declarations for CoreBluetooth to avoid including Objective-C headers in C++
 #ifdef __APPLE__
@@ -46,15 +47,27 @@ public:
     // Public wrapper for base class protected method (needed by ObjC delegate)
     void addDevice(const BLEDeviceInfo& device) { addDiscoveredDevice(device); }
 
+    // Callback for characteristic discovery (called by ObjC delegate)
+    void onCharacteristicDiscovered(CBCharacteristic* characteristic);
+
+    bool waitForCharacteristics(int timeout_ms = 10000) override;
+
 private:
 #ifdef __APPLE__
     CBCentralManager* central_manager_ = nullptr;
     CBPeripheral* connected_peripheral_ = nullptr;
+    CBCharacteristic* write_characteristic_ = nullptr;
+    CBCharacteristic* notify_characteristic_ = nullptr;
     void* delegate_ = nullptr;
 #endif
 
     std::atomic<bool> connected_;
     std::string connected_device_id_;
+
+#ifdef __APPLE__
+    std::mutex characteristics_mutex_;
+    std::condition_variable characteristics_cv_;
+#endif
 
     bool waitForBluetoothReady(int timeout_ms);
     CBPeripheral* findPeripheralByAddress(const std::string& address);

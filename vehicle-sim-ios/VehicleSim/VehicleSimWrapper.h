@@ -86,6 +86,18 @@ NS_ASSUME_NONNULL_BEGIN
 /// Address of the connected BLE adapter
 @property (nonatomic, readonly, nullable) NSString *connectedDeviceAddress;
 
+/// Vehicle detection diagnostic info
+@property (nonatomic, readonly) NSString *detectionInfo;
+
+/// Whether frames are actively being received (< 1s since last frame)
+@property (nonatomic, readonly) BOOL isReceivingData;
+
+/// Raw BLE notification count (increments on every BLE notification, before parsing)
+@property (nonatomic, readonly) int bleNotificationCount;
+
+/// Hex dump of last raw bytes received from BLE (before parsing)
+@property (nonatomic, readonly) NSString *lastRawHex;
+
 @end
 
 NS_ASSUME_NONNULL_END

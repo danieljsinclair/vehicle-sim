@@ -2,6 +2,7 @@
 
 #include "vehicle-sim/ble/BLEManagerBase.h"
 #include "vehicle-sim/ble/BLEDeviceInfo.h"
+#include <condition_variable>
 
 // Forward declarations for CoreBluetooth to avoid including Objective-C headers in C++
 #ifdef __APPLE__
@@ -76,6 +77,14 @@ public:
     // Public wrapper for base class protected method (needed by delegate)
     void addDevice(const BLEDeviceInfo& device) { addDiscoveredDevice(device); }
 
+    /**
+     * Wait for write and notify characteristics to be discovered.
+     * Blocks until both are found or timeout expires.
+     * @param timeout_ms Maximum time to wait in milliseconds
+     * @return true if both characteristics discovered
+     */
+    bool waitForCharacteristics(int timeout_ms = 10000) override;
+
 private:
 #ifdef __APPLE__
     // CoreBluetooth central manager (platform-specific)
@@ -96,6 +105,11 @@ private:
     // Platform-specific helper methods
     bool waitForBluetoothReady(int timeout_ms);
     CBPeripheral* findPeripheralByAddress(const std::string& address);
+
+#ifdef __APPLE__
+    std::mutex characteristics_mutex_;
+    std::condition_variable characteristics_cv_;
+#endif
 };
 
 } // namespace vehicle_sim

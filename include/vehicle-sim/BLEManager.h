@@ -58,6 +58,9 @@ public:
     // Get the underlying platform (for advanced usage)
     BLEManagerBase* getPlatform() const;
 
+    // Wait for write + notify characteristics after connect (blocks until ready or timeout)
+    bool waitForCharacteristics(int timeout_ms = 10000);
+
     // Initialize ELM327 adapter (send AT commands after connection)
     bool initializeELM327();
 
@@ -89,6 +92,13 @@ public:
 
     // Stop CAN monitor mode
     void stopCANMonitor();
+
+    // Get the vehicle detector for reading detection results
+    domain::VehicleDetector* vehicleDetector();
+
+    // Raw BLE activity tracking
+    [[nodiscard]] int bleNotificationCount() const;
+    [[nodiscard]] std::string lastRawHex() const;
 
 private:
     std::unique_ptr<BLEManagerBase> platform_;

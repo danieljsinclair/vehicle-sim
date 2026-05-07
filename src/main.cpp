@@ -24,7 +24,6 @@ namespace {
     constexpr int BLE_SCAN_TIMEOUT_S = 10;
 
     // Wait after BLE connect for GATT service enumeration on ELM327.
-    constexpr int SERVICE_DISCOVERY_WAIT_S = 2;
 
     // Wait after ELM327 init commands for AT processing.
     constexpr int ELM327_INIT_WAIT_S = 1;
@@ -106,16 +105,8 @@ namespace {
             return 1;
         }
 
-        std::cout << "\nFound " << devices.size() << " BLE device(s):\n\n";
-        for (size_t i = 0; i < devices.size(); ++i) {
-            const auto& dev = devices[i];
-            std::cout << "  [" << (i + 1) << "] " << dev.name << "\n"
-                              << "      Address: " << dev.address << "\n"
-                              << "      Status: " << (dev.isConnected ? "Connected" : "Available") << "\n\n";
-        }
-
-        std::cout << "To connect to a device, use:\n"
-                      << "  vehicle-sim --connect <address>\n";
+        std::cout << "\nFound " << devices.size() << " BLE device(s).\n";
+        std::cout << "To connect: vehicle-sim --connect <address>\n\n";
         return 0;
     }
 
@@ -164,10 +155,15 @@ namespace {
             return 1;
         }
 
-        std::cout << "Connected! Waiting for service discovery...\n";
-        std::this_thread::sleep_for(std::chrono::seconds(SERVICE_DISCOVERY_WAIT_S));
+        std::cout << "Connected! Waiting for service/characteristic discovery...\n";
 
-        // Initialize adapter based on protocol
+        if (!bleManager.waitForCharacteristics(10000)) {
+            std::cerr << "\nFailed to discover required BLE characteristics.\n"
+                      << "Check that the OBD2 adapter is powered and in range.\n";
+            bleManager.disconnect();
+            return 1;
+        }
+        std::cout << "Characteristics ready.\n";
         if (protocol == domain::VehicleProtocol::CAN) {
             std::cout << "Initializing CAN monitor mode...\n";
             if (!bleManager.initializeCANMonitor()) {
@@ -199,9 +195,31 @@ namespace {
 
         auto lastActivity = std::chrono::steady_clock::now();
         int noDataCount = 0;
+        bool detectionShown = false;
 
         while (g_running) {
             std::this_thread::sleep_for(std::chrono::milliseconds(BLE_HEALTH_CHECK_MS));
+
+            // Raw BLE activity status line (overwrites with \r)
+            {
+                int count = bleManager.bleNotificationCount();
+                std::string hex = bleManager.lastRawHex();
+                std::cout << "\r[BLE] notifications: " << count
+                          << "  last: " << std::left << std::setw(52) << hex
+                          << std::flush;
+            }
+
+            // Show detection diagnostics once we have data
+            if (!detectionShown && bleManager.vehicleDetector()->getResult().frameCount > 0) {
+                std::cout << "\n";
+                auto detResult = bleManager.vehicleDetector()->getResult();
+                std::cout << "[VehicleDetector] " << detResult.evidenceSummary << "\n";
+                if (detResult.hasSuggestion()) {
+                    std::cout << "[VehicleDetector] Suggesting: " << detResult.suggestedVehicleId
+                              << " (confidence: " << static_cast<int>(detResult.confidence) << ")\n";
+                }
+                detectionShown = true;
+            }
 
             if (!bleManager.isConnected()) {
                 std::cout << "\n[!] Connection lost.\n";

@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <mutex>
+#include <condition_variable>
 #include <atomic>
 #include <thread>
 #include <chrono>
@@ -138,6 +139,14 @@ public:
     virtual void send(const std::vector<uint8_t>& data) = 0;
 
     /**
+     * Wait for write and notify characteristics to be discovered after connect.
+     * Blocks until both are found or timeout expires.
+     * @param timeout_ms Maximum time to wait in milliseconds
+     * @return true if both characteristics discovered
+     */
+    virtual bool waitForCharacteristics(int timeout_ms = 10000) { return true; }
+
+    /**
      * Check if currently connected.
      * @return true if connected
      */
@@ -221,6 +230,26 @@ public:
      */
     static std::string signalQuality(int rssi);
 
+    /**
+     * Get the vehicle detector for reading detection results.
+     * @return Pointer to the active VehicleDetector (never null)
+     */
+    domain::VehicleDetector* vehicleDetector() { return vehicle_detector_.get(); }
+
+    /**
+     * Get count of raw BLE notifications received (before any parsing).
+     * Increments on every invokeDataCallback call.
+     */
+    [[nodiscard]] int bleNotificationCount() const noexcept { return ble_notification_count_.load(); }
+
+    /**
+     * Get hex dump of the last raw bytes received from BLE (before parsing).
+     */
+    [[nodiscard]] std::string lastRawHex() const {
+        std::lock_guard<std::mutex> lock(raw_mutex_);
+        return last_raw_hex_;
+    }
+
 protected:
     // ================================================
     // Protected Constructor - For derived classes
@@ -245,8 +274,7 @@ protected:
 
     // Polling timing constants
     static constexpr int DEFAULT_POLLING_INTERVAL_MS = 200;
-    static constexpr int PID_QUERY_DELAY_MS = 50;           // delay between sequential PID queries
-    static constexpr int TOTAL_PID_QUERY_TIME_MS = 250;      // 5 PIDs * 50ms
+    static constexpr int PROMPT_TIMEOUT_MS = 2000;           // max wait for '>' prompt before skipping PID
     static constexpr int POST_CONNECT_SETUP_DELAY_MS = 500;  // wait for characteristic notifications
 
     // OBD2 protocol constants
@@ -262,11 +290,27 @@ protected:
     std::thread polling_thread_;
     int polling_interval_ms_ = DEFAULT_POLLING_INTERVAL_MS;
 
+    // ELM327 prompt-driven sequencing state
+    // The ELM327 sends '>' when ready for the next command.
+    // The data callback detects '>' and signals this condition variable.
+    // The polling loop waits on it instead of using fixed sleeps.
+    std::mutex prompt_mutex_;
+    std::condition_variable prompt_cv_;
+    bool prompt_ready_ = false;
+
     // OBD2 protocol handler for vehicle detection and command management
     boundary::OBD2Protocol obd2_protocol_;
 
     // CAN monitor mode flag
     std::atomic<bool> can_mode_{false};
+
+    // Vehicle auto-detection (passive CAN ID observation)
+    std::unique_ptr<domain::VehicleDetector> vehicle_detector_;
+
+    // Raw BLE activity tracking (counts every notification before parsing)
+    std::atomic<int> ble_notification_count_{0};
+    mutable std::mutex raw_mutex_;
+    std::string last_raw_hex_;
 
     // ================================================
     // Protected Helper Methods for Derived Classes
@@ -318,6 +362,20 @@ protected:
      * @return Binary OBD2 data, or empty if not a valid OBD2 response
      */
     std::vector<uint8_t> parseASCIIResponseToBinary(const std::vector<uint8_t>& asciiData);
+
+    /**
+     * Wait for ELM327 '>' prompt with timeout.
+     * Blocks until prompt is detected or timeout expires.
+     * @param timeout_ms Maximum time to wait in milliseconds
+     * @return true if prompt received, false if timed out
+     */
+    bool waitForPrompt(int timeout_ms = PROMPT_TIMEOUT_MS);
+
+    /**
+     * Signal that the ELM327 '>' prompt has been received.
+     * Called from invokeDataCallback when '>' is detected in raw BLE data.
+     */
+    void notifyPrompt();
 };
 
 } // namespace vehicle_sim

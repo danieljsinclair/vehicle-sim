@@ -138,7 +138,10 @@ didDiscoverCharacteristicsForService:(CBService *)service
                       << ")"
                       << std::endl;
 
-            // Subscribe to notifications if available
+            if (self.manager) {
+                self.manager->onCharacteristicDiscovered(characteristic);
+            }
+
             if (characteristic.properties & CBCharacteristicPropertyNotify) {
                 [peripheral setNotifyValue:YES forCharacteristic:characteristic];
             }
@@ -331,6 +334,9 @@ void BLEManageriOS::disconnect() {
         connected_peripheral_ = nullptr;
     }
 
+    write_characteristic_ = nullptr;
+    notify_characteristic_ = nullptr;
+
     connected_ = false;
     connected_device_id_.clear();
 
@@ -341,25 +347,15 @@ void BLEManageriOS::disconnect() {
 }
 
 void BLEManageriOS::send(const std::vector<uint8_t>& data) {
-    if (!connected_peripheral_) {
-        std::cerr << "[BLEManageriOS] Not connected" << std::endl;
+    if (!connected_peripheral_ || !write_characteristic_) {
+        std::cerr << "[BLEManageriOS] Not connected or no write characteristic" << std::endl;
         return;
     }
 
     NSData* nsData = [NSData dataWithBytes:data.data() length:data.size()];
-    // Send to first writable characteristic discovered
-    for (CBService* service in connected_peripheral_.services) {
-        for (CBCharacteristic* characteristic in service.characteristics) {
-            if (characteristic.properties & CBCharacteristicPropertyWrite) {
-                [connected_peripheral_ writeValue:nsData
-                                forCharacteristic:characteristic
-                                             type:CBCharacteristicWriteWithResponse];
-                return;
-            }
-        }
-    }
-
-    std::cerr << "[BLEManageriOS] No writable characteristic found" << std::endl;
+    [connected_peripheral_ writeValue:nsData
+                    forCharacteristic:write_characteristic_
+                                 type:CBCharacteristicWriteWithResponse];
 }
 
 bool BLEManageriOS::isConnected() const {
@@ -469,6 +465,56 @@ CBPeripheral* BLEManageriOS::findPeripheralByAddress(const std::string& address)
         return peripheral;
     }
     return nullptr;
+}
+
+void BLEManageriOS::onCharacteristicDiscovered(CBCharacteristic* characteristic) {
+    bool gotWrite = false;
+    bool gotNotify = false;
+
+    if (characteristic.properties & CBCharacteristicPropertyWrite) {
+        write_characteristic_ = characteristic;
+        [write_characteristic_ retain];
+        std::cout << "[BLEManageriOS] Write characteristic found: "
+                  << [characteristic.UUID UUIDString] << std::endl;
+        gotWrite = true;
+    }
+
+    if (characteristic.properties & CBCharacteristicPropertyNotify) {
+        notify_characteristic_ = characteristic;
+        [notify_characteristic_ retain];
+        std::cout << "[BLEManageriOS] Notify characteristic found: "
+                  << [characteristic.UUID UUIDString] << std::endl;
+        gotNotify = true;
+    }
+
+    if (gotWrite || gotNotify) {
+        std::lock_guard<std::mutex> lock(characteristics_mutex_);
+        characteristics_cv_.notify_all();
+    }
+}
+
+bool BLEManageriOS::waitForCharacteristics(int timeout_ms) {
+    std::unique_lock<std::mutex> lock(characteristics_mutex_);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+
+    while (!write_characteristic_ || !notify_characteristic_) {
+        if (characteristics_cv_.wait_until(lock, deadline) == std::cv_status::timeout) {
+            break;
+        }
+    }
+
+    if (!write_characteristic_) {
+        std::cerr << "[BLEManageriOS] Timed out waiting for write characteristic ("
+                  << timeout_ms << "ms)" << std::endl;
+        return false;
+    }
+    if (!notify_characteristic_) {
+        std::cerr << "[BLEManageriOS] Timed out waiting for notify characteristic ("
+                  << timeout_ms << "ms)" << std::endl;
+        return false;
+    }
+
+    return true;
 }
 
 } // namespace vehicle_sim

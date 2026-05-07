@@ -77,6 +77,8 @@ private struct PressableRowStyle: ButtonStyle {
 
 struct ContentView: View {
     @StateObject private var viewModel = VehicleViewModel()
+    @State private var isReceiving = false
+    private let receiveCheckTimer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     var body: some View {
         NavigationView {
@@ -90,9 +92,9 @@ struct ContentView: View {
                     }
                     .pickerStyle(.segmented)
                     .disabled(viewModel.isDemoMode)
-                    .onChange(of: viewModel.selectedVehicle) { newValue in
+                    .onChange(of: viewModel.selectedVehicle) {
                         if viewModel.isConnected {
-                            viewModel.switchVehicleType(newValue)
+                            viewModel.switchVehicleType(viewModel.selectedVehicle)
                         }
                     }
                 }
@@ -101,11 +103,19 @@ struct ContentView: View {
                 Section(header: Text("Connection")) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 0) {
-                                Text(viewModel.connectionStatus)
-                                    .foregroundColor(viewModel.isConnected || viewModel.isDemoMode ? .green : viewModel.isConnecting ? .orange : .red)
-                                if viewModel.isConnecting {
-                                    ConnectingDotsView()
+                            HStack(spacing: 6) {
+                                if viewModel.isConnected {
+                                    Circle()
+                                        .fill(isReceiving ? .green : .gray)
+                                        .frame(width: 8, height: 8)
+                                        .animation(.easeInOut(duration: 0.3), value: isReceiving)
+                                }
+                                HStack(spacing: 0) {
+                                    Text(viewModel.connectionStatus)
+                                        .foregroundColor(viewModel.isConnected || viewModel.isDemoMode ? .green : viewModel.isConnecting ? .orange : .red)
+                                    if viewModel.isConnecting {
+                                        ConnectingDotsView()
+                                    }
                                 }
                             }
                             if let deviceName = viewModel.connectedDeviceName {
@@ -180,6 +190,32 @@ struct ContentView: View {
                     }
                 }
 
+                // MARK: - Detection
+                if viewModel.isConnected {
+                    Section(header: Text("Vehicle Detection")) {
+                        HStack {
+                            Circle()
+                                .fill(isReceiving ? .green : .gray)
+                                .frame(width: 8, height: 8)
+                            Text("BLE notifications: \(viewModel.bleNotificationCount)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        if !viewModel.lastRawHex.isEmpty {
+                            Text(viewModel.lastRawHex)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+
+                        if !viewModel.detectionInfo.isEmpty {
+                            Text(viewModel.detectionInfo)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+
                 // MARK: - Telemetry
                 Section(header: Text("Vehicle Telemetry")) {
                     LazyVGrid(columns: [
@@ -240,6 +276,9 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Vehicle Telemetry")
+            .onReceive(receiveCheckTimer) { _ in
+                isReceiving = viewModel.isReceivingData
+            }
         }
     }
 }
