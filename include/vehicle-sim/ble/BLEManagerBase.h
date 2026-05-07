@@ -9,7 +9,6 @@
 #include <condition_variable>
 #include <atomic>
 #include <thread>
-#include <chrono>
 
 #include "vehicle-sim/ble/BLEDeviceInfo.h"
 #include "vehicle-sim/boundary/OBD2Protocol.h"
@@ -52,6 +51,8 @@ struct OBD2PIDs {
     static constexpr uint8_t INTAKE_AIR_TEMP = 0x0F;        // Celsius
     static constexpr uint8_t ENGINE_LOAD = 0x04;            // 0-100%
     static constexpr uint8_t FUEL_LEVEL = 0x2F;             // 0-100%
+    static constexpr uint8_t BATTERY_VOLTAGE = 0x42;        // V (control module voltage)
+    static constexpr uint8_t ENGINE_RUNTIME = 0x1F;         // seconds since engine start
     static constexpr uint8_t BRAKE_PRESSURE = 0xA4;         // Manufacturer specific
     static constexpr uint8_t ACCELERATOR_POSITION_D = 0x5A; // Driver pedal %
     static constexpr uint8_t ACCELERATOR_POSITION_P = 0x5C; // Passenger pedal %
@@ -362,6 +363,17 @@ protected:
      * @return Binary OBD2 data, or empty if not a valid OBD2 response
      */
     std::vector<uint8_t> parseASCIIResponseToBinary(const std::vector<uint8_t>& asciiData);
+
+    /**
+     * Send an ASCII command string over BLE as raw bytes.
+     */
+    void sendASCII(const std::string& command);
+
+    /**
+     * Send a sequence of AT commands, waiting for the ELM327 '>' prompt
+     * after each one before sending the next.
+     */
+    void sendPromptDrivenSequence(const std::vector<boundary::ATCommand>& commands);
 
     /**
      * Wait for ELM327 '>' prompt with timeout.

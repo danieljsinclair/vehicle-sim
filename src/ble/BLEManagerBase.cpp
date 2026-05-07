@@ -55,15 +55,24 @@ void BLEManagerBase::setConnectionCallback(ConnectionCallback callback) {
 // OBD2 Command Building
 // ================================================
 
-OBD2Response BLEManagerBase::queryPID(uint8_t pid) {
-    // Use ELM327Transport to build ASCII command
-    std::string cmd = boundary::ELM327Transport::buildOBD2Query(OBD2_MODE_LIVE_DATA, pid);
-    // Convert ASCII string to bytes for BLE send
-    std::vector<uint8_t> bytes(cmd.begin(), cmd.end());
+void BLEManagerBase::sendASCII(const std::string& command) {
+    std::vector<uint8_t> bytes(command.begin(), command.end());
     send(bytes);
+}
 
-    // The actual response will come via the data callback
-    return OBD2Response{};  // Return empty - response comes async
+void BLEManagerBase::sendPromptDrivenSequence(const std::vector<boundary::ATCommand>& commands) {
+    for (const auto& cmd : commands) {
+        sendASCII(cmd.command);
+        if (!waitForPrompt(PROMPT_TIMEOUT_MS)) {
+            std::cerr << "[BLEManagerBase] Warning: no '>' prompt after " << cmd.command << std::endl;
+        }
+    }
+}
+
+OBD2Response BLEManagerBase::queryPID(uint8_t pid) {
+    std::string cmd = boundary::ELM327Transport::buildOBD2Query(OBD2_MODE_LIVE_DATA, pid);
+    sendASCII(cmd);
+    return OBD2Response{};
 }
 
 std::vector<uint8_t> BLEManagerBase::parseASCIIResponseToBinary(const std::vector<uint8_t>& asciiData) {
@@ -84,42 +93,23 @@ std::vector<uint8_t> BLEManagerBase::parseASCIIResponseToBinary(const std::vecto
 bool BLEManagerBase::initializeELM327() {
     std::cout << "[BLEManagerBase] Initializing ELM327 adapter..." << std::endl;
 
-    // Set up OBD2Protocol to send ASCII commands via this BLEManagerBase
-    obd2_protocol_.setSendCallback([this](const std::string& asciiCommand) {
-        // Convert ASCII command string to bytes for BLE send
-        std::vector<uint8_t> bytes(asciiCommand.begin(), asciiCommand.end());
-        send(bytes);
-    });
+    obd2_protocol_.setSendCallback([this](const std::string& cmd) { sendASCII(cmd); });
 
-    // Send initialization sequence
-    obd2_protocol_.initialize();
+    // Send initialization sequence with prompt-driven pacing.
+    // Each AT command must complete (ELM327 sends '>' prompt) before
+    // sending the next. ATZ (reset) can take several seconds.
+    sendPromptDrivenSequence(boundary::ELM327Transport::buildInitSequence());
 
-    std::cout << "[BLEManagerBase] ELM327 initialization commands sent" << std::endl;
+    std::cout << "[BLEManagerBase] ELM327 initialization complete" << std::endl;
     return true;
 }
 
 std::optional<domain::VehicleDetectionResult> BLEManagerBase::initializeOBD2WithDetection() {
     std::cout << "[BLEManagerBase] Initializing ELM327 with auto-detection..." << std::endl;
 
-    // Set up OBD2Protocol to send ASCII commands via this BLEManagerBase
-    obd2_protocol_.setSendCallback([this](const std::string& asciiCommand) {
-        // Convert ASCII command string to bytes for BLE send
-        std::vector<uint8_t> bytes(asciiCommand.begin(), asciiCommand.end());
-        send(bytes);
-    });
-
-    // Send initialization sequence
-    obd2_protocol_.initialize();
-
-    // Note: In a real async implementation, we would:
-    // 1. Send VIN query
-    // 2. Wait for and parse multi-frame response
-    // 3. Send fuel type query
-    // 4. Parse fuel type response
-    // 5. Return detection result
-    //
-    // For now, this method sets up the protocol and returns an empty result.
-    // The caller must call processOBD2Data() with incoming responses.
+    if (!initializeELM327()) {
+        return std::nullopt;
+    }
 
     std::cout << "[BLEManagerBase] Auto-detection ready - send queries and process responses" << std::endl;
     return obd2_protocol_.detectVehicle();
@@ -155,11 +145,12 @@ void BLEManagerBase::startOBD2Polling(int interval_ms) {
         std::this_thread::sleep_for(std::chrono::milliseconds(POST_CONNECT_SETUP_DELAY_MS));
 
         const uint8_t pids[] = {
+            OBD2PIDs::BATTERY_VOLTAGE,
+            OBD2PIDs::ENGINE_LOAD,
+            OBD2PIDs::COOLANT_TEMP,
             OBD2PIDs::THROTTLE_POSITION,
             OBD2PIDs::VEHICLE_SPEED,
-            OBD2PIDs::ENGINE_RPM,
-            OBD2PIDs::ENGINE_LOAD,
-            OBD2PIDs::COOLANT_TEMP
+            OBD2PIDs::ENGINE_RPM
         };
 
         while (polling_active_ && connected_) {
@@ -215,8 +206,7 @@ bool BLEManagerBase::initializeCANMonitor() {
 
     auto commands = boundary::ELM327Transport::buildCANMonitorInitSequence();
     for (const auto& cmd : commands) {
-        std::vector<uint8_t> bytes(cmd.command.begin(), cmd.command.end());
-        send(bytes);
+        sendASCII(cmd.command);
         std::this_thread::sleep_for(std::chrono::milliseconds(cmd.delayMs));
     }
 
@@ -235,10 +225,7 @@ void BLEManagerBase::startCANMonitor(int interval_ms) {
 
 void BLEManagerBase::stopCANMonitor() {
     can_mode_ = false;
-    // Send stop monitoring command
-    std::string stopCmd = "ATMA\r";
-    std::vector<uint8_t> bytes(stopCmd.begin(), stopCmd.end());
-    send(bytes);
+    sendASCII("ATMA\r");
     std::cout << "[BLEManagerBase] CAN monitor mode stopped" << std::endl;
 }
 

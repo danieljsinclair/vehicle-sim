@@ -25,9 +25,6 @@ namespace {
 
     // Wait after BLE connect for GATT service enumeration on ELM327.
 
-    // Wait after ELM327 init commands for AT processing.
-    constexpr int ELM327_INIT_WAIT_S = 1;
-
     // Connection health check interval.
     constexpr int BLE_HEALTH_CHECK_MS = 500;
 
@@ -177,8 +174,6 @@ namespace {
                 return 1;
             }
         }
-
-        std::this_thread::sleep_for(std::chrono::seconds(ELM327_INIT_WAIT_S));
 
         std::cout << "Starting " << protocolLabel << " data polling (interval: " << updateIntervalMs << "ms)...\n";
         std::cout << "Press Ctrl+C to stop\n";
