@@ -230,6 +230,13 @@ struct ContentView: View {
                         )
 
                         TelemetryCardView(
+                            title: "Gear",
+                            value: viewModel.gearSelector.isEmpty ? "-" : viewModel.gearSelector,
+                            unit: "",
+                            color: .orange
+                        )
+
+                        TelemetryCardView(
                             title: "Throttle",
                             value: String(format: "%.1f%%", viewModel.throttlePercent),
                             unit: "",

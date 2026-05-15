@@ -66,6 +66,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// Latest motor torque in Nm (-7500.0 to +7500.0)
 @property (nonatomic, readonly) double motorTorqueNm;
 
+/// Latest gear selector ("P", "R", "N", "D", "S", or "")
+@property (nonatomic, readonly, nullable) NSString *gearSelector;
+
 /// Latest steering angle in degrees (-819.2 to +819.2)
 @property (nonatomic, readonly) double steeringAngleDeg;
 

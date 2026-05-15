@@ -29,7 +29,18 @@ void printTelemetryRow(std::ostream& out, const domain::VehicleSignal& signal, i
     out << "Brake: " << std::setw(5) << std::fixed << std::setprecision(1)
         << signal.getBrakePercent() << "%  ";
     out << "Accel: " << std::setw(5) << std::fixed << std::setprecision(2)
-        << signal.getAccelerationG() << " G\n";
+        << signal.getAccelerationG() << " G  ";
+    out << "Steer: " << std::setw(6) << std::fixed << std::setprecision(1)
+        << signal.getSteeringAngleDeg() << "°  ";
+    out << "Motor: " << std::setw(5) << std::fixed << std::setprecision(0)
+        << signal.getMotorRpm() << " rpm  ";
+    out << "HV: " << std::setw(5) << std::fixed << std::setprecision(1)
+        << signal.getMotorHvVoltage() << "V  ";
+    out << "Curr: " << std::setw(5) << std::fixed << std::setprecision(1)
+        << signal.getMotorHvCurrent() << "A  ";
+    out << "Trq: " << std::setw(6) << std::fixed << std::setprecision(1)
+        << signal.getMotorTorqueNm() << " Nm  ";
+    out << "Gear: " << std::setw(1) << signal.getGearSelector() << "\n";
 }
 
 void printTelemetryHeader(std::ostream& out, const domain::VehicleConfig& config) {

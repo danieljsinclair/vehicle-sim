@@ -141,3 +141,158 @@ TEST_F(VehicleSignalFactoryTest, SignalWithNegativeTorqueValue) {
     EXPECT_EQ(signal.getMotorRpm(), 0.0);
     EXPECT_EQ(signal.getMotorTorqueNm(), -2048.0);
 }
+
+TEST_F(VehicleSignalFactoryTest, GearSelectorMapsZeroToPark) {
+    auto configWithGear = std::make_unique<VehicleConfig>(
+        "test.dbc",
+        "Test Vehicle",
+        std::unordered_map<std::string, std::string>{
+            {"Transmission_Gear", "gearSelector"}
+        }
+    );
+
+    DBCParseResult gearParseResult;
+    gearParseResult.signalsByCanId[256].emplace_back(DBCSignalParams{
+        256, "Transmission_Gear", 0, 8, DBCByteOrder::Intel, 1.0, 0.0, false, "", 0.0, 10.0
+    });
+
+    VehicleSignalFactory factory(*configWithGear, gearParseResult);
+
+    std::unordered_map<std::uint16_t, std::vector<std::uint8_t>> frames;
+    frames[256] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+    auto signal = factory.build(frames, 1234567890);
+
+    EXPECT_EQ(signal.getGearSelector(), "P");
+}
+
+TEST_F(VehicleSignalFactoryTest, GearSelectorMapsOneToReverse) {
+    auto configWithGear = std::make_unique<VehicleConfig>(
+        "test.dbc",
+        "Test Vehicle",
+        std::unordered_map<std::string, std::string>{
+            {"Transmission_Gear", "gearSelector"}
+        }
+    );
+
+    DBCParseResult gearParseResult;
+    gearParseResult.signalsByCanId[256].emplace_back(DBCSignalParams{
+        256, "Transmission_Gear", 0, 8, DBCByteOrder::Intel, 1.0, 0.0, false, "", 0.0, 10.0
+    });
+
+    VehicleSignalFactory factory(*configWithGear, gearParseResult);
+
+    std::unordered_map<std::uint16_t, std::vector<std::uint8_t>> frames;
+    frames[256] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+    auto signal = factory.build(frames, 1234567890);
+
+    EXPECT_EQ(signal.getGearSelector(), "R");
+}
+
+TEST_F(VehicleSignalFactoryTest, GearSelectorMapsTwoToNeutral) {
+    auto configWithGear = std::make_unique<VehicleConfig>(
+        "test.dbc",
+        "Test Vehicle",
+        std::unordered_map<std::string, std::string>{
+            {"Transmission_Gear", "gearSelector"}
+        }
+    );
+
+    DBCParseResult gearParseResult;
+    gearParseResult.signalsByCanId[256].emplace_back(DBCSignalParams{
+        256, "Transmission_Gear", 0, 8, DBCByteOrder::Intel, 1.0, 0.0, false, "", 0.0, 10.0
+    });
+
+    VehicleSignalFactory factory(*configWithGear, gearParseResult);
+
+    std::unordered_map<std::uint16_t, std::vector<std::uint8_t>> frames;
+    frames[256] = {0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+    auto signal = factory.build(frames, 1234567890);
+
+    EXPECT_EQ(signal.getGearSelector(), "N");
+}
+
+TEST_F(VehicleSignalFactoryTest, GearSelectorMapsThreeToDrive) {
+    auto configWithGear = std::make_unique<VehicleConfig>(
+        "test.dbc",
+        "Test Vehicle",
+        std::unordered_map<std::string, std::string>{
+            {"Transmission_Gear", "gearSelector"}
+        }
+    );
+
+    DBCParseResult gearParseResult;
+    gearParseResult.signalsByCanId[256].emplace_back(DBCSignalParams{
+        256, "Transmission_Gear", 0, 8, DBCByteOrder::Intel, 1.0, 0.0, false, "", 0.0, 10.0
+    });
+
+    VehicleSignalFactory factory(*configWithGear, gearParseResult);
+
+    std::unordered_map<std::uint16_t, std::vector<std::uint8_t>> frames;
+    frames[256] = {0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+    auto signal = factory.build(frames, 1234567890);
+
+    EXPECT_EQ(signal.getGearSelector(), "D");
+}
+
+TEST_F(VehicleSignalFactoryTest, GearSelectorMapsFourToSport) {
+    auto configWithGear = std::make_unique<VehicleConfig>(
+        "test.dbc",
+        "Test Vehicle",
+        std::unordered_map<std::string, std::string>{
+            {"Transmission_Gear", "gearSelector"}
+        }
+    );
+
+    DBCParseResult gearParseResult;
+    gearParseResult.signalsByCanId[256].emplace_back(DBCSignalParams{
+        256, "Transmission_Gear", 0, 8, DBCByteOrder::Intel, 1.0, 0.0, false, "", 0.0, 10.0
+    });
+
+    VehicleSignalFactory factory(*configWithGear, gearParseResult);
+
+    std::unordered_map<std::uint16_t, std::vector<std::uint8_t>> frames;
+    frames[256] = {0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+    auto signal = factory.build(frames, 1234567890);
+
+    EXPECT_EQ(signal.getGearSelector(), "S");
+}
+
+TEST_F(VehicleSignalFactoryTest, GearSelectorMapsUnknownToEmpty) {
+    auto configWithGear = std::make_unique<VehicleConfig>(
+        "test.dbc",
+        "Test Vehicle",
+        std::unordered_map<std::string, std::string>{
+            {"Transmission_Gear", "gearSelector"}
+        }
+    );
+
+    DBCParseResult gearParseResult;
+    gearParseResult.signalsByCanId[256].emplace_back(DBCSignalParams{
+        256, "Transmission_Gear", 0, 8, DBCByteOrder::Intel, 1.0, 0.0, false, "", 0.0, 10.0
+    });
+
+    VehicleSignalFactory factory(*configWithGear, gearParseResult);
+
+    std::unordered_map<std::uint16_t, std::vector<std::uint8_t>> frames;
+    frames[256] = {0x99, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+    auto signal = factory.build(frames, 1234567890);
+
+    EXPECT_EQ(signal.getGearSelector(), "");
+}
+
+TEST_F(VehicleSignalFactoryTest, GearSelectorDefaultsToEmptyWhenNotMapped) {
+    VehicleSignalFactory factory(*config_, parseResult_);
+
+    std::unordered_map<std::uint16_t, std::vector<std::uint8_t>> frames;
+    frames[264] = {0x00, 0x00, 0x00, 0x00, 0x00, 0xA8, 0x61, 0x00};
+
+    auto signal = factory.build(frames, 1234567890);
+
+    EXPECT_EQ(signal.getGearSelector(), "");
+}

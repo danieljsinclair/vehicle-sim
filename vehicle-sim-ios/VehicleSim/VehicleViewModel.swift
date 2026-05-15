@@ -9,6 +9,7 @@ class VehicleViewModel: ObservableObject {
     @Published var brakePercent: Double = 0.0
     @Published var motorRpm: Double = 0.0
     @Published var motorTorqueNm: Double = 0.0
+    @Published var gearSelector: String = ""
     @Published var steeringAngleDeg: Double = 0.0
 
     // MARK: - Connection State
@@ -150,6 +151,7 @@ class VehicleViewModel: ObservableObject {
         brakePercent = 0.0
         motorRpm = 0.0
         motorTorqueNm = 0.0
+        gearSelector = ""
         steeringAngleDeg = 0.0
     }
 
@@ -208,6 +210,7 @@ class VehicleViewModel: ObservableObject {
         brakePercent = wrapper.brakePercent
         motorRpm = wrapper.motorRpm
         motorTorqueNm = wrapper.motorTorqueNm
+        gearSelector = wrapper.gearSelector ?? ""
         steeringAngleDeg = wrapper.steeringAngleDeg
     }
 

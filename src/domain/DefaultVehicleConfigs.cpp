@@ -4,7 +4,7 @@ namespace vehicle_sim::domain {
 
 VehicleConfig DefaultVehicleConfigs::teslaModel3() {
     return VehicleConfig(
-        ".claude/research/model3dbc/Model3CAN.dbc",
+        "resources/dbc/Model3CAN.dbc",
         "Tesla Model 3",
         std::unordered_map<std::string, std::string>{
             {"DIR_axleSpeed", "motorRpm"},
@@ -19,7 +19,7 @@ VehicleConfig DefaultVehicleConfigs::teslaModel3() {
 
 VehicleConfig DefaultVehicleConfigs::audiMLBEvo() {
     return VehicleConfig(
-        ".claude/research/opendbc/opendbc/dbc/vw_mlb.dbc",
+        "resources/dbc/vw_mlb.dbc",
         "Audi MLB Evo",
         std::unordered_map<std::string, std::string>{
             {"ESP_v_Signal", "speedKmh"},

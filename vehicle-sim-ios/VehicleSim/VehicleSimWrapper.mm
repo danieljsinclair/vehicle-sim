@@ -132,13 +132,14 @@ std::string getEmbeddedDBC(const std::string& vehicleType) {
     std::atomic<double> _brakePercent;
     std::atomic<double> _motorRpm;
     std::atomic<double> _motorTorqueNm;
+    std::string _gearSelector;  // Protected by _mutex
     std::atomic<double> _steeringAngleDeg;
 
     // State
     std::atomic<bool> _isDemoMode;
     std::atomic<bool> _isConnected;
 
-    // Mutex for protecting operations
+    // Mutex for protecting operations and _gearSelector
     std::mutex _mutex;
 
     // Vehicle protocol for current connection
@@ -170,6 +171,7 @@ std::string getEmbeddedDBC(const std::string& vehicleType) {
         _brakePercent.store(0.0);
         _motorRpm.store(0.0);
         _motorTorqueNm.store(0.0);
+        _gearSelector = "";
         _steeringAngleDeg.store(0.0);
 
         _isDemoMode.store(false);
@@ -244,12 +246,14 @@ std::string getEmbeddedDBC(const std::string& vehicleType) {
 
     std::string vehicleTypeStr = [vehicleType UTF8String];
 
-    // Determine protocol based on vehicle type
-    if (vehicleTypeStr == "tesla_model3" || vehicleTypeStr == "audi_mlb_evo") {
-        _protocol = VehicleProtocol::CAN;
-    } else {
-        _protocol = VehicleProtocol::OBD2;
+    // Get the vehicle config to determine protocol (OCP: no hard-coded type checking)
+    const auto* config = _translationService->registry().getConfig(vehicleTypeStr);
+    if (!config) {
+        return NO;
     }
+
+    // Determine protocol from config (not from hard-coded vehicle type names)
+    _protocol = config->isCANProtocol ? VehicleProtocol::CAN : VehicleProtocol::OBD2;
 
     // Load vehicle config (use embedded DBC for iOS - no file path dependency)
     std::string dbcContent = getEmbeddedDBC(vehicleTypeStr);
@@ -301,6 +305,11 @@ std::string getEmbeddedDBC(const std::string& vehicleType) {
             self->_motorRpm.store(signal->getMotorRpm());
             self->_motorTorqueNm.store(signal->getMotorTorqueNm());
             self->_steeringAngleDeg.store(signal->getSteeringAngleDeg());
+            // Update gearSelector with mutex protection
+            {
+                std::lock_guard<std::mutex> lock(self->_mutex);
+                self->_gearSelector = signal->getGearSelector();
+            }
         }
     });
 
@@ -375,6 +384,19 @@ std::string getEmbeddedDBC(const std::string& vehicleType) {
     return _motorTorqueNm.load();
 }
 
+- (NSString *)gearSelector {
+    if (_isDemoMode.load()) {
+        const std::string& gear = _simulator->getLatestSignal().getGearSelector();
+        return [NSString stringWithUTF8String:gear.c_str()];
+    }
+    std::string gear;
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        gear = _gearSelector;
+    }
+    return [NSString stringWithUTF8String:gear.c_str()];
+}
+
 - (double)steeringAngleDeg {
     if (_isDemoMode.load()) {
         return _simulator->getLatestSignal().getSteeringAngleDeg();
@@ -415,11 +437,14 @@ std::string getEmbeddedDBC(const std::string& vehicleType) {
 
     std::string vehicleTypeStr = [vehicleType UTF8String];
 
-    if (vehicleTypeStr == "tesla_model3" || vehicleTypeStr == "audi_mlb_evo") {
-        _protocol = VehicleProtocol::CAN;
-    } else {
-        _protocol = VehicleProtocol::OBD2;
+    // Get the vehicle config to determine protocol (OCP: no hard-coded type checking)
+    const auto* config = _translationService->registry().getConfig(vehicleTypeStr);
+    if (!config) {
+        return NO;
     }
+
+    // Determine protocol from config (not from hard-coded vehicle type names)
+    _protocol = config->isCANProtocol ? VehicleProtocol::CAN : VehicleProtocol::OBD2;
 
     std::string dbcContent = getEmbeddedDBC(vehicleTypeStr);
     bool loaded = _translationService->loadVehicleWithContent(vehicleTypeStr, _protocol, dbcContent);

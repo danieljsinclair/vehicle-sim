@@ -25,6 +25,7 @@ VehicleSignal VehicleSignalFactory::build(
     double motorHvVoltage = 0.0;
     double motorHvCurrent = 0.0;
     double motorTorqueNm = 0.0;
+    std::string gearSelector;
 
     for (const auto& [signalName, fieldName] : config_.signalMappings) {
         double* targetField = nullptr;
@@ -39,7 +40,31 @@ VehicleSignal VehicleSignalFactory::build(
         else if (fieldName == "motorHvCurrent") targetField = &motorHvCurrent;
         else if (fieldName == "motorTorqueNm") targetField = &motorTorqueNm;
 
-        if (!targetField) continue;
+        if (!targetField) {
+            if (fieldName == "gearSelector") {
+                for (const auto& [canId, frame] : frames) {
+                    auto value = DBCSignalMapper::mapSignal(
+                        frame,
+                        canId,
+                        signalName,
+                        parseResult_.signalsByCanId
+                    );
+                    if (value) {
+                        int gearCode = static_cast<int>(*value);
+                        switch (gearCode) {
+                            case 0: gearSelector = "P"; break;
+                            case 1: gearSelector = "R"; break;
+                            case 2: gearSelector = "N"; break;
+                            case 3: gearSelector = "D"; break;
+                            case 4: gearSelector = "S"; break;
+                            default: gearSelector = ""; break;
+                        }
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
 
         for (const auto& [canId, frame] : frames) {
             auto value = DBCSignalMapper::mapSignal(
@@ -65,7 +90,8 @@ VehicleSignal VehicleSignalFactory::build(
         motorRpm,
         motorHvVoltage,
         motorHvCurrent,
-        motorTorqueNm
+        motorTorqueNm,
+        gearSelector
     );
 }
 

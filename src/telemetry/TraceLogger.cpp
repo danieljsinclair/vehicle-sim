@@ -34,7 +34,7 @@ bool TraceLogger::isValid() const noexcept {
 }
 
 void TraceLogger::writeHeader() {
-    file_ << "timestamp_utc_ms,throttle_pct,speed_kmh,acceleration_g,brake_pct,motor_rpm,gear_selector,motor_torque_nm\n";
+    file_ << "timestamp_utc_ms,throttle_pct,speed_kmh,acceleration_g,brake_pct,steering_angle_deg,motor_rpm,motor_hv_voltage,motor_hv_current,gear_selector,motor_torque_nm\n";
     file_.flush();
 }
 
@@ -44,7 +44,10 @@ void TraceLogger::writeRow(const domain::VehicleSignal& signal) {
           << formatDouble(signal.getSpeedKmh()) << ","
           << formatDouble(signal.getAccelerationG()) << ","
           << formatDouble(signal.getBrakePercent()) << ","
+          << formatDouble(signal.getSteeringAngleDeg()) << ","
           << formatDouble(signal.getMotorRpm()) << ","
+          << formatDouble(signal.getMotorHvVoltage()) << ","
+          << formatDouble(signal.getMotorHvCurrent()) << ","
           << formatString(signal.getGearSelector()) << ","
           << formatDouble(signal.getMotorTorqueNm())
           << "\n";
@@ -61,7 +64,7 @@ std::string TraceLogger::formatDouble(double value) {
 }
 
 std::string TraceLogger::formatString(const std::string& value) {
-    return value.empty() ? "" : value;
+    return value;  // TODO: Add CSV escaping, quoting, etc. in future
 }
 
 TraceLogger::TraceLogger(TraceLogger&& other) noexcept

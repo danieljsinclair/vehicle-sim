@@ -12,11 +12,11 @@ protected:
 
     // Helper to get DBC file path relative to project root
     std::string getTeslaDBCPath() const {
-        return ".claude/research/model3dbc/Model3CAN.dbc";
+        return "resources/dbc/Model3CAN.dbc";
     }
 
     std::string getAudiDBCPath() const {
-        return ".claude/research/opendbc/opendbc/dbc/vw_mlb.dbc";
+        return "resources/dbc/vw_mlb.dbc";
     }
 
     // Helper to create Tesla config
